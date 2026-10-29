@@ -30,7 +30,10 @@ services:
       CREATE_ADMIN: "1"
       ADMIN_USERNAME: ${MINIFLUX_ADMIN_USER}
       ADMIN_PASSWORD: ${MINIFLUX_ADMIN_PASSWORD}
-      POLLING_FREQUENCY: "10"
+      # Feeds elke MINIFLUX_POLL_MINUTES minuten verversen (Miniflux-standaard is 60)
+      POLLING_FREQUENCY: ${MINIFLUX_POLL_MINUTES:-5}
+      SCHEDULER_ROUND_ROBIN_MIN_INTERVAL: ${MINIFLUX_POLL_MINUTES:-5}
+      BATCH_SIZE: "200"
       BASE_URL: ${MINIFLUX_BASE_URL:-http://localhost:8281}
 
   # Maakt feeds van sites zonder RSS (optioneel)
@@ -111,6 +114,7 @@ services:
       NTFY_TOPIC: ${NTFY_TOPIC:-nieuwsradar}
       NTFY_TOKEN: ${NTFY_TOKEN:-}
       PUBLIC_URL: ${RADAR_PUBLIC_URL:-http://localhost:8280}
+      RADAR_INTERVAL: ${RADAR_INTERVAL:-120}   # seconden tussen radar-rondes
       TZ: Europe/Amsterdam
     volumes:
       - radar-data:/data
