@@ -4,22 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Nieuwsradar</title>
-<meta name="theme-color" content="#F8F9FF" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#111318" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F8F9FF" media="(prefers-color-scheme: light)" id="tcLight">
+<meta name="theme-color" content="#111318" media="(prefers-color-scheme: dark)" id="tcDark">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/static/icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wght@8..144,400;8..144,500;8..144,600;8..144,700;8..144,800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css">
-<script>try{document.documentElement.style.fontSize={s:'13px',m:'14.4px',l:'16px',xl:'17.6px'}[localStorage.getItem('nr:fs')||'m']}catch(e){}</script>
+<script>try{document.documentElement.style.fontSize={s:'13px',m:'14.4px',l:'16px',xl:'17.6px'}[localStorage.getItem('nr:fs')||'m'];var t=localStorage.getItem('nr:theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
 </head>
 <body>
 <header class="topbar">
   <div class="wrap topbar-in">
-    <button class="icon-btn" id="menuBtn" aria-label="Menu openen" aria-haspopup="dialog">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
-    </button>
     <a class="brand" href="#/">
       <span class="brand-mark" aria-hidden="true">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 12l5-5"/></svg>
@@ -32,6 +29,9 @@
       <input id="q" type="search" placeholder="Zoek in bevestigd nieuws" autocomplete="off">
     </form>
     <button class="tonal" id="installBtn" hidden>Installeren</button>
+    <button class="icon-btn" id="menuBtn" aria-label="Menu openen" aria-haspopup="dialog">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
   </div>
 </header>
 <dialog class="drawer" id="drawer" aria-label="Menu">

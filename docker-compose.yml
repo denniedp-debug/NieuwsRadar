@@ -66,6 +66,7 @@ services:
         sleep 5
         ollama pull ${EMBED_MODEL:-bge-m3}
         if [ -n "${LLM_MODEL}" ]; then ollama pull ${LLM_MODEL}; fi
+        if [ -n "${TRANSLATE_MODEL}" ]; then ollama pull ${TRANSLATE_MODEL}; fi
     restart: "no"
 
   # --- Pushmeldingen -----------------------------------------------------
@@ -103,6 +104,8 @@ services:
       OLLAMA_URL: http://ollama:11434
       EMBED_MODEL: ${EMBED_MODEL:-bge-m3}
       LLM_MODEL: ${LLM_MODEL:-}
+      TRANSLATE: ${TRANSLATE:-false}
+      TRANSLATE_MODEL: ${TRANSLATE_MODEL:-}
       NTFY_URL: ${NTFY_URL:-}            # bijv. http://ntfy:80; leeg = alleen Web Push
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}
       NTFY_TOPIC: ${NTFY_TOPIC:-nieuwsradar}

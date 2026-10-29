@@ -144,6 +144,33 @@ def maybe_summarize(c: dict):
         )
 
 
+def maybe_translate(c: dict) -> dict:
+    """Engelstalige verhalen krijgen een Nederlandse kop en inleiding (origineel blijft bewaard)."""
+    if not (settings.TRANSLATE and settings.TRANSLATE_MODEL):
+        return c
+    if c.get("translated_title") == c["title"]:
+        return c  # al vertaald (of al beoordeeld) voor deze kop
+    first = db.con().execute(
+        "SELECT text FROM entries WHERE cluster_id=? ORDER BY published_at LIMIT 1", (c["id"],)
+    ).fetchone()
+    teaser = (first["text"] if first else "")[:400]
+    if not ai.is_english(f"{c['title']} {teaser}"):
+        db.con().execute("UPDATE clusters SET lang='nl', translated_title=? WHERE id=?", (c["title"], c["id"]))
+        return c
+    res = ai.translate(c["title"], teaser)
+    if res:
+        db.con().execute(
+            "UPDATE clusters SET lang='en', title_nl=?, teaser_nl=?, translated_title=? WHERE id=?",
+            (res["title"], res["teaser"], c["title"], c["id"]),
+        )
+        c = {**c, "title_nl": res["title"], "teaser_nl": res["teaser"], "lang": "en"}
+    return c
+
+
+def display_title(c: dict) -> str:
+    return c.get("title_nl") or c["title"]
+
+
 # --- Pushregels voor clusters ------------------------------------------------
 
 def push_reason(c: dict, cfg: dict) -> tuple[str, bool] | None:
@@ -174,7 +201,7 @@ def maybe_push(c: dict, cfg: dict):
         return
     reason, critical = res
     ok = push.send(
-        title=("Kritiek: " if critical else "") + c["title"],
+        title=("Kritiek: " if critical else "") + display_title(c),
         message=f"{reason}. Bevestigd door {c['n_sources']} onafhankelijke bron(nen).",
         click=f"{settings.PUBLIC_URL}/#/c/{c['id']}",
         priority=5 if critical else 4,
@@ -189,11 +216,26 @@ def maybe_push(c: dict, cfg: dict):
 
 # --- De run -------------------------------------------------------------------
 
+def translate_backlog(limit: int):
+    """Oudere, nog niet beoordeelde verhalen van de laatste 48 uur alsnog vertalen."""
+    if not (settings.TRANSLATE and settings.TRANSLATE_MODEL) or limit <= 0:
+        return
+    since = iso(now() - timedelta(hours=48))
+    rows = db.con().execute(
+        "SELECT * FROM clusters WHERE updated_at >= ? AND (translated_title IS NULL OR translated_title != title) "
+        "ORDER BY updated_at DESC LIMIT ?", (since, limit),
+    ).fetchall()
+    for r in rows:
+        maybe_translate(dict(r))
+        db.con().commit()
+
+
 def run_once():
     cfg = settings.load()
     cl = cfg.get("clustering") or {}
     raw = fetch_new_entries()
     if not raw:
+        translate_backlog(settings.TRANSLATE_PER_RUN)
         return 0
     entries = [normalize(e, cfg) for e in raw if e.get("title")]
     clusters = open_clusters(int(cl.get("window_hours", 48)))
@@ -215,9 +257,13 @@ def run_once():
                 touched.add(cid)
             con.commit()
         db.set_state("last_entry_id", chunk[-1]["id"])
+    translated = 0
     for cid in touched:
         c = refresh_cluster(cid, cfg)
         maybe_summarize(c)
+        if translated < settings.TRANSLATE_PER_RUN and c.get("translated_title") != c["title"]:
+            c = maybe_translate(c)
+            translated += 1
         maybe_push(c, cfg)
         con.commit()
     log.info("%d artikelen verwerkt, %d verhalen bijgewerkt", len(entries), len(touched))

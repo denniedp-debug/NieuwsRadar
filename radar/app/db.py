@@ -45,6 +45,11 @@ def connect():
     con = sqlite3.connect(DB_PATH, check_same_thread=False)
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)
+    cols = [r[1] for r in con.execute("PRAGMA table_info(clusters)")]
+    for col in ("title_nl", "teaser_nl", "lang", "translated_title"):
+        if col not in cols:  # migratie van oudere databases
+            con.execute(f"ALTER TABLE clusters ADD COLUMN {col} TEXT")
+    con.commit()
     return con
 
 

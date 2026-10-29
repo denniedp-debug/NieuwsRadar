@@ -1,4 +1,4 @@
-"""Ollama: embeddings voor clustering, optioneel een LLM voor samenvattingen."""
+"""Ollama: embeddings voor clustering, optioneel een LLM voor samenvattingen en vertalingen."""
 import json
 import logging
 
@@ -62,4 +62,47 @@ def summarize(articles: list[dict]) -> dict | None:
         }
     except Exception as e:  # LLM is optioneel; nooit de pipeline laten stoppen
         log.warning("samenvatten mislukt: %s", e)
+        return None
+
+
+_EN = set("the and of to in is for on with that this was are from by at as be has have will it its an after over says said new".split())
+_NL = set("de het een en van is op in voor niet met dat die zijn wordt werd heeft naar bij ook om als door er nog over".split())
+
+
+def is_english(text: str) -> bool:
+    words = [w.strip(".,:;!?\"'()").lower() for w in text.split()[:80]]
+    en = sum(w in _EN for w in words)
+    nl = sum(w in _NL for w in words)
+    return en >= 2 and en > nl * 1.5
+
+
+TRANSLATE_PROMPT = """Vertaal deze nieuwskop en inleiding van het Engels naar natuurlijk Nederlands.
+Houd namen, productnamen en CVE-nummers ongewijzigd. Voeg niets toe.
+Antwoord uitsluitend met JSON: {"title": "...", "teaser": "..."}
+
+Kop: %s
+Inleiding: %s"""
+
+
+def translate(title: str, teaser: str) -> dict | None:
+    if not (settings.TRANSLATE and settings.TRANSLATE_MODEL):
+        return None
+    try:
+        r = httpx.post(
+            f"{settings.OLLAMA_URL}/api/chat",
+            json={
+                "model": settings.TRANSLATE_MODEL,
+                "messages": [{"role": "user", "content": TRANSLATE_PROMPT % (title, teaser[:600])}],
+                "format": "json",
+                "stream": False,
+                "options": {"temperature": 0},
+            },
+            timeout=300,
+        )
+        r.raise_for_status()
+        data = json.loads(r.json()["message"]["content"])
+        t = str(data.get("title", "")).strip()
+        return {"title": t, "teaser": str(data.get("teaser", "")).strip()} if t else None
+    except Exception as e:
+        log.warning("vertalen mislukt: %s", e)
         return None

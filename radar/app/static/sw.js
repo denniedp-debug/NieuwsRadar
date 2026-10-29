@@ -1,6 +1,6 @@
 // Service worker: app-shell offline, API network-first met cache als terugval.
-const SHELL = 'nr-shell-v3';
-const API = 'nr-api-v3';
+const SHELL = 'nr-shell-v4';
+const API = 'nr-api-v4';
 const ASSETS = ['/', '/static/style.css', '/static/app.js', '/manifest.webmanifest', '/static/icons/icon.svg', '/static/icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {

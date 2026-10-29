@@ -62,10 +62,11 @@ def _card(c, with_sources=False):
     first_text = db.con().execute(
         "SELECT text FROM entries WHERE cluster_id=? ORDER BY published_at LIMIT 1", (c["id"],)
     ).fetchone()
-    teaser = c["summary"] or ((first_text["text"][:220] + "…") if first_text and first_text["text"] else "")
+    teaser = c["summary"] or c.get("teaser_nl") or ((first_text["text"][:220] + "…") if first_text and first_text["text"] else "")
     out = {
         "id": c["id"],
-        "title": c["title"],
+        "title": c.get("title_nl") or c["title"],
+        "originalTitle": c["title"] if c.get("title_nl") else None,
         "category": c["category"],
         "categoryLabel": CAT_LABELS.get(c["category"], c["category"]),
         "status": c["status"],
@@ -103,8 +104,8 @@ def list_clusters(cat: str = "all", q: str = "", limit: int = 60):
         sql += " AND category=?"
         args.append(cat)
     if q:
-        sql += " AND id IN (SELECT cluster_id FROM entries WHERE title LIKE ? OR text LIKE ?)"
-        args += [f"%{q}%", f"%{q}%"]
+        sql += " AND (title_nl LIKE ? OR id IN (SELECT cluster_id FROM entries WHERE title LIKE ? OR text LIKE ?))"
+        args += [f"%{q}%", f"%{q}%", f"%{q}%"]
     # Belangrijkste eerst: kritiek, dan bevestigd met veel bronnen, dan recent
     sql += " ORDER BY critical DESC, (status='waiting') ASC, date(updated_at) DESC, n_sources DESC, updated_at DESC LIMIT ?"
     args.append(min(limit, 200))

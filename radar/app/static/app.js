@@ -55,7 +55,7 @@
         <div class="card-body">
           <div class="card-title">${esc(c.title)}</div>
           ${c.teaser ? `<div class="teaser">${esc(c.teaser)}</div>` : ''}
-          <div class="meta">${badge(c)}<span>${esc(c.categoryLabel)} · ${esc(ago(c.updatedAt))}</span></div>
+          <div class="meta">${badge(c)}<span>${esc(c.categoryLabel)} · ${esc(ago(c.updatedAt))}${c.originalTitle ? ' · vertaald' : ''}</span></div>
         </div>
       </a>`).join('');
     app.innerHTML = `
@@ -101,6 +101,10 @@
         <div class="seg" role="radiogroup" aria-label="Tekstgrootte">${opts.map(([k, l]) =>
           `<label class="seg-item"><input type="radio" name="fs" value="${k}" ${cur === k ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>
         <p style="margin-top:14px">Voorbeeld: <b>Twee kritieke lekken in PHP; noodpatches uitgebracht</b></p>
+      </div>
+      <div class="panel"><h3>Thema</h3><p>Automatisch volgt de instelling van je telefoon of computer.</p>
+        <div class="seg three" role="radiogroup" aria-label="Thema">${[['auto', 'Automatisch'], ['light', 'Licht'], ['dark', 'Donker']].map(([k, l]) =>
+          `<label class="seg-item"><input type="radio" name="theme" value="${k}" ${(localGet('theme') || 'auto') === k ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>
       </div>`);
   }
 
@@ -207,6 +211,7 @@
         <div class="layout" style="padding:0">
           <article class="article">
             <div class="meta">${badge(c, true)}</div>
+            ${c.originalTitle ? `<p class="translated">Automatisch vertaald uit het Engels · origineel: “${esc(c.originalTitle)}”</p>` : ''}
             ${c.summary ? `<p class="lede">${esc(c.summary)}</p>` : `<p class="lede">${esc(c.teaser)}</p>`}
             ${facts ? `<div class="box"><h2>Wat de bronnen bevestigen</h2><ul class="facts">${facts}</ul></div>` : ''}
             ${disputed ? `<div class="box"><h2>Waar de bronnen verschillen</h2><ul>${disputed}</ul></div>` : ''}
@@ -248,6 +253,7 @@
   });
   app.addEventListener('change', async (e) => {
     if (e.target.name === 'fs') { localSet('fs', e.target.value); applyFontSize(); return; }
+    if (e.target.name === 'theme') { localSet('theme', e.target.value); applyTheme(); return; }
     if (e.target.closest('[data-pref]')) return savePrefs();
     const t = e.target.closest('[data-rule]');
     if (!t) return;
@@ -263,6 +269,19 @@
   const drawer = document.getElementById('drawer');
   document.getElementById('menuBtn').addEventListener('click', () => drawer.showModal());
   drawer.addEventListener('click', (e) => { if (e.target === drawer || e.target.closest('a,[data-close]')) drawer.close(); });
+
+  // ---------- Thema ----------
+  function applyTheme() {
+    const t = localGet('theme') || 'auto';
+    const root = document.documentElement;
+    if (t === 'auto') delete root.dataset.theme; else root.dataset.theme = t;
+    // kleur van de statusbalk/titelbalk meenemen
+    const light = document.getElementById('tcLight'), dark = document.getElementById('tcDark');
+    if (light && dark) {
+      light.media = t === 'auto' ? '(prefers-color-scheme: light)' : (t === 'light' ? 'all' : 'not all');
+      dark.media = t === 'auto' ? '(prefers-color-scheme: dark)' : (t === 'dark' ? 'all' : 'not all');
+    }
+  }
 
   // ---------- Tekstgrootte ----------
   function applyFontSize() {
@@ -281,5 +300,6 @@
   btn.addEventListener('click', async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; btn.hidden = true; });
 
   applyFontSize();
+  applyTheme();
   route();
 })();
