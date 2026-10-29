@@ -1,6 +1,6 @@
 (() => {
   const app = document.getElementById('app');
-  const TABS = [['all', 'Alles'], ['ok', 'Bevestigd'], ['it', 'IT-security'], ['il', 'Israël'], ['nl', 'Nederland'], ['tech', 'Tech'], ['world', 'Wereld']];
+  const TABS = [['all', 'Alles'], ['ok', 'Bevestigd'], ['it', 'IT-security'], ['il', 'Israël'], ['nl', 'Nederland'], ['kerk', 'Kerk'], ['tech', 'Tech'], ['world', 'Wereld']];
   const state = { tab: localGet('tab') || 'all', q: '', limit: 30, dismissed: localGet('dismissed') || '' };
 
   function localGet(k) { try { return localStorage.getItem('nr:' + k); } catch { return null; } }
@@ -40,16 +40,7 @@
 
   // ---------- Feed ----------
   async function renderFeed() {
-    const [items, cfg, watch] = await Promise.all([
-      api(`/api/clusters?cat=${encodeURIComponent(state.tab)}&q=${encodeURIComponent(state.q)}&limit=${state.limit}`),
-      api('/api/settings'),
-      api('/api/watchers').catch(() => []),
-    ]);
-    const watchHtml = watch.length ? `<div class="panel"><h3>Paginawachters</h3>${watch.map((w) => `
-      <div style="margin-bottom:12px"><a href="${esc(safeUrl(w.url))}" target="_blank" rel="noopener"><b>${esc(w.name)}</b></a>
-      <small style="display:block;color:var(--on-var)">${w.changed ? 'Laatst gewijzigd ' + esc(ago(w.changed)) : 'Nog geen wijziging gezien'}</small>
-      ${w.text ? `<pre style="white-space:pre-wrap;font:inherit;font-size:14px;margin:8px 0 0;background:var(--surface);border-radius:16px;padding:12px 14px">${esc(w.text)}</pre>` : ''}</div>`).join('')}
-      <button class="tonal" id="testWatch">Stuur testmelding</button></div>` : '';
+    const items = await api(`/api/clusters?cat=${encodeURIComponent(state.tab)}&q=${encodeURIComponent(state.q)}&limit=${state.limit}`);
     const crit = items.find((c) => c.critical && Date.now() - new Date(c.updatedAt) < 864e5);
     const snack = crit && String(crit.id) !== state.dismissed
       ? `<div class="snack" role="status"><div class="t"><b>Kritiek: ${esc(crit.title)}</b><span>Bevestigd door ${crit.independent} bronnen · ${esc(ago(crit.updatedAt))}</span></div>
@@ -67,28 +58,59 @@
           <div class="meta">${badge(c)}<span>${esc(c.categoryLabel)} · ${esc(ago(c.updatedAt))}</span></div>
         </div>
       </a>`).join('');
+    app.innerHTML = `
+      <section class="feed single">
+        ${snack}
+        <nav class="chips" aria-label="Rubriek">${chips}</nav>
+        <h2 class="section-h">${state.q ? 'Zoekresultaten voor “' + esc(state.q) + '”' : 'Voor jou · ' + new Date().toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' })}</h2>
+        ${cards || '<div class="empty">Nog niets hier. De radar haalt elke 5 minuten nieuwe artikelen op.</div>'}
+        ${items.length >= state.limit ? '<button class="tonal more" id="more">Meer laden</button>' : ''}
+      </section>`;
+  }
+
+  // ---------- Pagina's uit het menu ----------
+  const page = (title, body) => `<section class="page"><h1 class="page-h">${title}</h1>${body}</section>`;
+
+  async function renderMeldingen() {
+    const cfg = await api('/api/settings');
     const rules = cfg.rules.map((r) => `
       <label class="rule"><span>${esc(r.label)}<small>${esc(r.hint)}</small></span>
         <input class="switch" type="checkbox" role="switch" data-rule="${esc(r.id)}" ${r.enabled ? 'checked' : ''}></label>`).join('');
-    app.innerHTML = `
-      <div class="layout">
-        <section class="feed">
-          ${snack}
-          <nav class="chips" aria-label="Rubriek">${chips}</nav>
-          <h2 class="section-h">Voor jou · ${new Date().toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' })}</h2>
-          ${cards || '<div class="empty">Nog niets hier. De radar haalt elke 5 minuten nieuwe artikelen op.</div>'}
-          ${items.length >= state.limit ? '<button class="tonal more" id="more">Meer laden</button>' : ''}
-        </section>
-        <aside class="side">
-          <div class="panel" id="pushPanel"><h3>Meldingen op dit apparaat</h3><p>Even kijken…</p></div>
-          <div class="panel"><h3>Pushregels</h3><p>Bepaalt wanneer je een melding krijgt.</p>${rules}</div>
-          ${watchHtml}
-          <div class="panel"><h3>Watchlist</h3><div class="tags">${cfg.watchlist.map((w) => `<span class="tag">${esc(w)}</span>`).join('')}</div></div>
-          <div class="panel"><h3>Zo telt de radar</h3><p>Overgenomen ANP-, Reuters- of AP-tekst telt als één bron. Bevestigd = 2+ bronnen met eigen herkomst binnen 48 uur.</p>
-          <p>Laatste run: ${cfg.lastRun ? esc(ago(cfg.lastRun)) : 'nog niet'}</p></div>
-        </aside>
-      </div>`;
+    app.innerHTML = page('Meldingen', `
+      <div class="panel" id="pushPanel"><h3>Meldingen op dit apparaat</h3><p>Even kijken…</p></div>
+      <div class="panel"><h3>Pushregels</h3><p>Bepaalt wanneer nieuws een melding oplevert. Geldt voor alle apparaten.</p>${rules}</div>
+      <div class="panel"><h3>Watchlist</h3><p>Aanpassen in config.yaml.</p><div class="tags">${cfg.watchlist.map((w) => `<span class="tag">${esc(w)}</span>`).join('')}</div></div>`);
     updatePushPanel();
+  }
+
+  async function renderWachters() {
+    const watch = await api('/api/watchers').catch(() => []);
+    app.innerHTML = page('Paginawachters', (watch.length ? watch.map((w) => `
+      <div class="panel"><h3><a href="${esc(safeUrl(w.url))}" target="_blank" rel="noopener">${esc(w.name)}</a></h3>
+      <p>${w.changed ? 'Laatst gewijzigd ' + esc(ago(w.changed)) : 'Nog geen wijziging gezien'}${w.checked ? ' · gecontroleerd ' + esc(ago(new Date(w.checked * 1000).toISOString())) : ''}</p>
+      ${w.text ? `<pre class="watch-text">${esc(w.text)}</pre>` : '<p>Nog niet opgehaald.</p>'}</div>`).join('')
+      + '<button class="tonal" id="testWatch">Stuur testmelding</button>'
+      : '<div class="panel"><p>Nog geen paginawachters. Voeg ze toe onder <b>watchers</b> in config.yaml.</p></div>'));
+  }
+
+  function renderWeergave() {
+    const cur = localGet('fs') || 'm';
+    const opts = [['s', 'Klein'], ['m', 'Normaal'], ['l', 'Groot'], ['xl', 'Groter']];
+    app.innerHTML = page('Weergave', `
+      <div class="panel"><h3>Tekstgrootte</h3><p>Geldt alleen voor dit apparaat.</p>
+        <div class="seg" role="radiogroup" aria-label="Tekstgrootte">${opts.map(([k, l]) =>
+          `<label class="seg-item"><input type="radio" name="fs" value="${k}" ${cur === k ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>
+        <p style="margin-top:14px">Voorbeeld: <b>Twee kritieke lekken in PHP; noodpatches uitgebracht</b></p>
+      </div>`);
+  }
+
+  async function renderUitleg() {
+    const cfg = await api('/api/settings').catch(() => ({}));
+    app.innerHTML = page('Zo werkt de radar', `
+      <div class="panel"><h3>Bronnen tellen</h3>
+        <p>Artikelen over hetzelfde onderwerp worden samengevoegd tot één verhaal. De radar telt de <b>herkomst</b>, niet het aantal sites: overgenomen ANP-, Reuters-, AP- of AFP-tekst telt als één bron.</p>
+        <p><b>Bevestigd</b> = minstens 2 bronnen met een eigen herkomst binnen 48 uur. <b>Officieel</b> = alleen een officiële bron zoals NCSC. <b>Wacht op bevestiging</b> = nog maar één herkomst.</p></div>
+      <div class="panel"><h3>Status</h3><p>Laatste run: ${cfg.lastRun ? esc(ago(cfg.lastRun)) : 'nog niet'}</p></div>`);
   }
 
   // ---------- Web Push ----------
@@ -177,7 +199,7 @@
       <span class="ini">${esc((s.feed_title || '?')[0])}</span>
       <span style="flex:1;min-width:0"><b style="font-weight:500">${esc(s.feed_title)}</b><small>${esc(s.origin === s.site ? 'eigen redactie' : 'herkomst: ' + s.origin)} · ${esc(ago(s.published_at))}</small><small>${esc(s.title)}</small></span></a></li>`).join('');
     app.innerHTML = `
-      <a class="back" href="#/"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>Terug naar feed</a>
+      <a class="back" href="#/"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>Terug</a>
       <div style="display:flex;flex-direction:column;gap:20px;padding:12px 0 40px">
         ${hero(c, 'dhero')}
           <div class="dhero-in"><span class="pill">${esc(c.categoryLabel)} · ${esc(ago(c.updatedAt))}</span><h1>${esc(c.title)}</h1></div>
@@ -197,10 +219,17 @@
   }
 
   // ---------- Router & events ----------
+  const PAGES = { '#/meldingen': renderMeldingen, '#/wachters': renderWachters, '#/weergave': renderWeergave, '#/uitleg': renderUitleg };
+  const isFeed = () => location.hash === '' || location.hash === '#/' || location.hash === '#';
   async function route() {
     const m = location.hash.match(/^#\/c\/(\d+)/);
-    try { m ? await renderDetail(m[1]) : await renderFeed(); }
-    catch { app.innerHTML = '<div class="empty">Kan de radar niet bereiken. Je ziet de laatst opgeslagen versie zodra die er is.</div>'; }
+    document.querySelectorAll('.drawer a').forEach((a) => a.setAttribute('aria-current', a.getAttribute('href') === (location.hash || '#/') ? 'page' : 'false'));
+    try {
+      if (m) await renderDetail(m[1]);
+      else if (PAGES[location.hash]) await PAGES[location.hash]();
+      else await renderFeed();
+      if (!m) window.scrollTo(0, 0);
+    } catch { app.innerHTML = '<div class="empty">Kan de radar niet bereiken. Je ziet de laatst opgeslagen versie zodra die er is.</div>'; }
   }
   window.addEventListener('hashchange', route);
 
@@ -212,12 +241,13 @@
       ({ pushOn, pushOff, pushTest })[t.id]().catch((err) => updatePushPanel('Mislukt: ' + err.message));
       return;
     }
-    if (t.id === 'testWatch') { t.disabled = true; t.textContent = 'Verstuurd'; api('/api/watchers/test', { method: 'POST' }).then(renderFeed).catch(() => {}); return; }
+    if (t.id === 'testWatch') { t.disabled = true; t.textContent = 'Verstuurd'; api('/api/watchers/test', { method: 'POST' }).then(renderWachters).catch(() => {}); return; }
     if (t.dataset.tab) { state.tab = t.dataset.tab; state.limit = 30; localSet('tab', state.tab); renderFeed(); }
     else if (t.dataset.dismiss) { state.dismissed = t.dataset.dismiss; localSet('dismissed', state.dismissed); renderFeed(); }
     else if (t.id === 'more') { state.limit += 30; renderFeed(); }
   });
   app.addEventListener('change', async (e) => {
+    if (e.target.name === 'fs') { localSet('fs', e.target.value); applyFontSize(); return; }
     if (e.target.closest('[data-pref]')) return savePrefs();
     const t = e.target.closest('[data-rule]');
     if (!t) return;
@@ -226,11 +256,22 @@
   document.getElementById('searchForm').addEventListener('submit', (e) => {
     e.preventDefault();
     state.q = document.getElementById('q').value.trim();
-    location.hash === '#/' || location.hash === '' ? renderFeed() : (location.hash = '#/');
+    isFeed() ? renderFeed() : (location.hash = '#/');
   });
 
+  // ---------- Menu (navigation drawer) ----------
+  const drawer = document.getElementById('drawer');
+  document.getElementById('menuBtn').addEventListener('click', () => drawer.showModal());
+  drawer.addEventListener('click', (e) => { if (e.target === drawer || e.target.closest('a,[data-close]')) drawer.close(); });
+
+  // ---------- Tekstgrootte ----------
+  function applyFontSize() {
+    const map = { s: '13px', m: '14.4px', l: '16px', xl: '17.6px' };
+    document.documentElement.style.fontSize = map[localGet('fs') || 'm'] || map.m;
+  }
+
   // Elke 2 minuten verversen als de feed open staat
-  setInterval(() => { if (!location.hash.startsWith('#/c/') && document.visibilityState === 'visible') renderFeed().catch(() => {}); }, 120000);
+  setInterval(() => { if (isFeed() && document.visibilityState === 'visible') renderFeed().catch(() => {}); }, 120000);
 
   // ---------- PWA ----------
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
@@ -239,5 +280,6 @@
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferred = e; btn.hidden = false; });
   btn.addEventListener('click', async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; btn.hidden = true; });
 
+  applyFontSize();
   route();
 })();

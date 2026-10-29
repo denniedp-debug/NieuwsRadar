@@ -4,7 +4,7 @@
   De categorienamen moeten overeenkomen met "categories" in config.yaml.
   Controleer na import of elke feed werkt (Miniflux toont fouten per feed).
 
-  RD.nl: voeg zelf toe, zie README ("RD.nl met je account").
+  RD.nl: voor volledige artikelen met je account, zie README ("RD.nl met je account").
 -->
 <opml version="2.0">
   <head><title>Nieuwsradar</title></head>
@@ -19,12 +19,19 @@
     </outline>
     <outline text="Tech" title="Tech">
       <outline type="rss" text="Tweakers" xmlUrl="https://tweakers.net/feeds/mixed.xml" htmlUrl="https://tweakers.net/"/>
+      <outline type="rss" text="RD.nl Wetenschap &amp; techniek" xmlUrl="https://www.rd.nl/rss-feed?slug=wetenschap-and-techniek" htmlUrl="https://www.rd.nl/"/>
       <outline type="rss" text="Ars Technica" xmlUrl="https://feeds.arstechnica.com/arstechnica/index" htmlUrl="https://arstechnica.com/"/>
       <outline type="rss" text="The Register" xmlUrl="https://www.theregister.com/headlines.atom" htmlUrl="https://www.theregister.com/"/>
     </outline>
     <outline text="Nederland" title="Nederland">
       <outline type="rss" text="NOS Algemeen" xmlUrl="https://feeds.nos.nl/nosnieuwsalgemeen" htmlUrl="https://nos.nl/"/>
       <outline type="rss" text="NU.nl Algemeen" xmlUrl="https://www.nu.nl/rss/Algemeen" htmlUrl="https://www.nu.nl/"/>
+      <outline type="rss" text="RD.nl Binnenland" xmlUrl="https://www.rd.nl/rss-feed?slug=binnenland" htmlUrl="https://www.rd.nl/"/>
+      <outline type="rss" text="RD.nl Politiek" xmlUrl="https://www.rd.nl/rss-feed?slug=politiek" htmlUrl="https://www.rd.nl/"/>
+    </outline>
+    <outline text="Kerk" title="Kerk">
+      <outline type="rss" text="RD.nl Kerk &amp; religie" xmlUrl="https://www.rd.nl/rss-feed?slug=kerk-and-religie" htmlUrl="https://www.rd.nl/"/>
+      <outline type="rss" text="RD.nl Christenvervolging" xmlUrl="https://www.rd.nl/rss-feed?slug=christenvervolging" htmlUrl="https://www.rd.nl/"/>
     </outline>
     <outline text="Israël" title="Israël">
       <outline type="rss" text="Times of Israel" xmlUrl="https://www.timesofisrael.com/feed/" htmlUrl="https://www.timesofisrael.com/"/>
@@ -35,6 +42,7 @@
     </outline>
     <outline text="Wereld" title="Wereld">
       <outline type="rss" text="BBC World" xmlUrl="https://feeds.bbci.co.uk/news/world/rss.xml" htmlUrl="https://www.bbc.com/news/world"/>
+      <outline type="rss" text="RD.nl Buitenland" xmlUrl="https://www.rd.nl/rss-feed?slug=buitenland" htmlUrl="https://www.rd.nl/"/>
     </outline>
   </body>
 </opml>

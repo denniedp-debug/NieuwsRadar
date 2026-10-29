@@ -46,7 +46,7 @@ async def lifespan(app):
 
 app = FastAPI(title="Nieuwsradar", lifespan=lifespan)
 
-CAT_LABELS = {"it": "IT-security", "tech": "Tech", "nl": "Nederland", "il": "Israël", "world": "Wereld"}
+CAT_LABELS = {"it": "IT-security", "tech": "Tech", "nl": "Nederland", "kerk": "Kerk", "il": "Israël", "world": "Wereld"}
 
 
 def _sources(cid):
