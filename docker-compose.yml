@@ -90,10 +90,9 @@ services:
 
   # --- De radar zelf: controle, pushregels en PWA ------------------------
   radar:
-    build:
-      context: .
-      dockerfile: radar/Dockerfile
-    image: nieuwsradar/radar:latest
+    # Kant-en-klare image, gebouwd door GitHub Actions (.github/workflows/docker.yml).
+    # Zelf bouwen: docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+    image: ghcr.io/denniedp-debug/nieuwsradar:latest
     restart: unless-stopped
     depends_on: [miniflux, ollama]
     ports:
