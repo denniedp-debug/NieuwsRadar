@@ -1,0 +1,116 @@
+name: nieuwsradar
+
+services:
+  # --- Feeds verzamelen -------------------------------------------------
+  miniflux-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: miniflux
+      POSTGRES_PASSWORD: ${MINIFLUX_DB_PASSWORD}
+      POSTGRES_DB: miniflux
+    volumes:
+      - miniflux-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "miniflux"]
+      interval: 10s
+      retries: 5
+
+  miniflux:
+    image: miniflux/miniflux:latest
+    restart: unless-stopped
+    depends_on:
+      miniflux-db:
+        condition: service_healthy
+    ports:
+      - "8081:8080"
+    environment:
+      DATABASE_URL: postgres://miniflux:${MINIFLUX_DB_PASSWORD}@miniflux-db/miniflux?sslmode=disable
+      RUN_MIGRATIONS: "1"
+      CREATE_ADMIN: "1"
+      ADMIN_USERNAME: ${MINIFLUX_ADMIN_USER}
+      ADMIN_PASSWORD: ${MINIFLUX_ADMIN_PASSWORD}
+      POLLING_FREQUENCY: "10"
+      BASE_URL: ${MINIFLUX_BASE_URL:-http://localhost:8081}
+
+  # Maakt feeds van sites zonder RSS (optioneel)
+  rsshub:
+    image: diygod/rsshub:latest
+    restart: unless-stopped
+    ports:
+      - "1200:1200"
+    environment:
+      NODE_ENV: production
+      CACHE_TYPE: memory
+
+  # --- Lokale AI voor clustering en samenvattingen ---------------------
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+    # Heb je een NVIDIA-GPU? Haal dan het commentaar hieronder weg.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    depends_on: [ollama]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        sleep 5
+        ollama pull ${EMBED_MODEL:-bge-m3}
+        if [ -n "${LLM_MODEL}" ]; then ollama pull ${LLM_MODEL}; fi
+    restart: "no"
+
+  # --- Pushmeldingen -----------------------------------------------------
+  ntfy:
+    image: binwiederhier/ntfy:latest
+    restart: unless-stopped
+    command: serve
+    ports:
+      - "8082:80"
+    environment:
+      NTFY_BASE_URL: ${NTFY_PUBLIC_URL:-http://localhost:8082}
+      NTFY_CACHE_FILE: /var/cache/ntfy/cache.db
+      NTFY_AUTH_FILE: /var/lib/ntfy/user.db
+      NTFY_AUTH_DEFAULT_ACCESS: ${NTFY_DEFAULT_ACCESS:-read-write}
+      NTFY_BEHIND_PROXY: "true"
+    volumes:
+      - ntfy-cache:/var/cache/ntfy
+      - ntfy-lib:/var/lib/ntfy
+
+  # --- De radar zelf: controle, pushregels en PWA ------------------------
+  radar:
+    build: ./radar
+    image: nieuwsradar/radar:latest
+    restart: unless-stopped
+    depends_on: [miniflux, ollama, ntfy]
+    ports:
+      - "8080:8080"
+    environment:
+      MINIFLUX_URL: http://miniflux:8080
+      MINIFLUX_API_KEY: ${MINIFLUX_API_KEY}
+      OLLAMA_URL: http://ollama:11434
+      EMBED_MODEL: ${EMBED_MODEL:-bge-m3}
+      LLM_MODEL: ${LLM_MODEL:-}
+      NTFY_URL: http://ntfy:80
+      NTFY_TOPIC: ${NTFY_TOPIC:-nieuwsradar}
+      NTFY_TOKEN: ${NTFY_TOKEN:-}
+      PUBLIC_URL: ${RADAR_PUBLIC_URL:-http://localhost:8080}
+      TZ: Europe/Amsterdam
+    volumes:
+      - radar-data:/data
+      - ./config.yaml:/app/config.yaml:ro
+
+volumes:
+  miniflux-db:
+  ollama:
+  ntfy-cache:
+  ntfy-lib:
+  radar-data:

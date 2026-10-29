@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Importeer in Miniflux: Feeds > Importeren.
+  De categorienamen moeten overeenkomen met "categories" in config.yaml.
+  Controleer na import of elke feed werkt (Miniflux toont fouten per feed).
+
+  RD.nl: voeg zelf toe, zie README ("RD.nl met je account").
+-->
+<opml version="2.0">
+  <head><title>Nieuwsradar</title></head>
+  <body>
+    <outline text="IT-security" title="IT-security">
+      <outline type="rss" text="Security.nl" xmlUrl="https://www.security.nl/rss/headlines.xml" htmlUrl="https://www.security.nl/"/>
+      <outline type="rss" text="BleepingComputer" xmlUrl="https://www.bleepingcomputer.com/feed/" htmlUrl="https://www.bleepingcomputer.com/"/>
+      <outline type="rss" text="The Hacker News" xmlUrl="https://feeds.feedburner.com/TheHackersNews" htmlUrl="https://thehackernews.com/"/>
+    </outline>
+    <outline text="Officieel" title="Officieel">
+      <outline type="rss" text="NCSC Beveiligingsadviezen" xmlUrl="https://advisories.ncsc.nl/rss/advisories" htmlUrl="https://advisories.ncsc.nl/"/>
+    </outline>
+    <outline text="Tech" title="Tech">
+      <outline type="rss" text="Tweakers" xmlUrl="https://tweakers.net/feeds/mixed.xml" htmlUrl="https://tweakers.net/"/>
+      <outline type="rss" text="Ars Technica" xmlUrl="https://feeds.arstechnica.com/arstechnica/index" htmlUrl="https://arstechnica.com/"/>
+      <outline type="rss" text="The Register" xmlUrl="https://www.theregister.com/headlines.atom" htmlUrl="https://www.theregister.com/"/>
+    </outline>
+    <outline text="Nederland" title="Nederland">
+      <outline type="rss" text="NOS Algemeen" xmlUrl="https://feeds.nos.nl/nosnieuwsalgemeen" htmlUrl="https://nos.nl/"/>
+      <outline type="rss" text="NU.nl Algemeen" xmlUrl="https://www.nu.nl/rss/Algemeen" htmlUrl="https://www.nu.nl/"/>
+    </outline>
+    <outline text="Israël" title="Israël">
+      <outline type="rss" text="Times of Israel" xmlUrl="https://www.timesofisrael.com/feed/" htmlUrl="https://www.timesofisrael.com/"/>
+      <outline type="rss" text="Jerusalem Post" xmlUrl="https://www.jpost.com/rss/rssfeedsheadlines.aspx" htmlUrl="https://www.jpost.com/"/>
+      <outline type="rss" text="Ynetnews" xmlUrl="https://www.ynetnews.com/Integration/StoryRss3089.xml" htmlUrl="https://www.ynetnews.com/"/>
+      <outline type="rss" text="Haaretz" xmlUrl="https://www.haaretz.com/srv/haaretz-latest-headlines" htmlUrl="https://www.haaretz.com/"/>
+      <outline type="rss" text="Al Jazeera" xmlUrl="https://www.aljazeera.com/xml/rss/all.xml" htmlUrl="https://www.aljazeera.com/"/>
+    </outline>
+    <outline text="Wereld" title="Wereld">
+      <outline type="rss" text="BBC World" xmlUrl="https://feeds.bbci.co.uk/news/world/rss.xml" htmlUrl="https://www.bbc.com/news/world"/>
+    </outline>
+  </body>
+</opml>

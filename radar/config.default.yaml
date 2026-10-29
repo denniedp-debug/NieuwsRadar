@@ -1,0 +1,70 @@
+# Nieuwsradar-instellingen. Wordt elke run opnieuw ingelezen.
+
+clustering:
+  similarity: 0.82        # 0..1, hoger = strenger samenvoegen
+  window_hours: 48        # hoe lang een verhaal "open" blijft voor nieuwe bronnen
+  confirmed_min_sources: 2
+
+# Miniflux-categorie -> rubriek in de radar
+categories:
+  "IT-security": it
+  "Tech": tech
+  "Nederland": nl
+  "Israël": il
+  "Wereld": world
+  "Officieel": official   # NCSC, CERT-EU e.d.: telt als officiële bron
+
+# Teksten die verraden dat een artikel van een persbureau is overgenomen.
+# Alle artikelen met dezelfde herkomst tellen samen als één bron.
+wire_services:
+  ANP: ['\(ANP\)', '\bANP\b']
+  Reuters: ['\(Reuters\)', '\bReuters\b']
+  AP: ['\(AP\)', 'Associated Press']
+  AFP: ['\(AFP\)', '\bAFP\b']
+  dpa: ['\(dpa\)']
+
+watchlist:
+  - PHP
+  - Microsoft 365
+  - Exchange
+  - Entra
+  - Fortinet
+  - FortiGate
+  - Hyper-V
+  - Windows Server
+  - Home Assistant
+  - Ubuntu
+  - Docker
+
+push:
+  kev:                      # nieuw lek in CISA "Known Exploited Vulnerabilities"
+    enabled: true
+    only_watchlist: true    # false = elke nieuwe KEV-melding
+  ncsc_high_high:           # NCSC-advies met kans én schade "H"
+    enabled: true
+  watchlist:                # watchlist-trefwoord + (CERT/NCSC-bron of CVSS >= min_cvss)
+    enabled: true
+    min_cvss: 9.0
+  big_news:                 # veel onafhankelijke bronnen in korte tijd
+    enabled: true
+    min_sources: 4
+    within_hours: 6
+  categories:               # elk bevestigd verhaal in deze rubrieken
+    enabled: false
+    list: [il]
+
+# Paginawachters: melding zodra het gekozen deel van een pagina verandert.
+# selector = CSS-selector van het blok; de tekst daarvan gaat mee in de melding.
+watchers:
+  - name: Petrakerk Ede
+    url: https://petrakerkede.nl/live-luisteren/
+    selector: .liturgie-column
+    interval_minutes: 10
+    title_from_first_line: true   # eerste regel (datum/tijd) wordt de titel
+    notify_on_first: false        # bij de allereerste controle alleen vastleggen
+    priority: 3
+    tags: [church]
+
+security_feeds:
+  kev_url: https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json
+  ncsc_rss: https://advisories.ncsc.nl/rss/advisories
