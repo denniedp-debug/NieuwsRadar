@@ -21,6 +21,9 @@ NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "nieuwsradar")
 NTFY_TOKEN = os.environ.get("NTFY_TOKEN", "")
 PUBLIC_URL = os.environ.get("PUBLIC_URL", "http://localhost:8080").rstrip("/")
 INTERVAL_SECONDS = int(os.environ.get("RADAR_INTERVAL", "300"))
+FIRST_RUN_HOURS = int(os.environ.get("FIRST_RUN_HOURS", "12"))   # eerste keer: zo ver terugkijken
+EMBED_BATCH = int(os.environ.get("EMBED_BATCH", "16"))
+EMBED_CHARS = int(os.environ.get("EMBED_CHARS", "300"))
 
 
 def load():

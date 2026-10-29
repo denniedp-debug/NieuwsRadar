@@ -30,7 +30,7 @@ def fetch_new_entries(limit_total=500) -> list[dict]:
     if last_id:
         params["after_entry_id"] = last_id
     else:  # eerste run: alleen de laatste 48 uur
-        params["after"] = int((now() - timedelta(hours=48)).timestamp())
+        params["after"] = int((now() - timedelta(hours=settings.FIRST_RUN_HOURS)).timestamp())
     with httpx.Client(base_url=settings.MINIFLUX_URL, headers=headers, timeout=30) as c:
         while len(out) < limit_total:
             r = c.get("/v1/entries", params=params)
@@ -230,41 +230,57 @@ def translate_backlog(limit: int):
         db.con().commit()
 
 
+def _finish_clusters(cids, cfg, budget):
+    """Bronnen tellen, status bepalen, (optioneel) samenvatten/vertalen en pushregels toepassen."""
+    con = db.con()
+    for cid in cids:
+        c = refresh_cluster(cid, cfg)
+        maybe_summarize(c)
+        if budget[0] > 0 and c.get("translated_title") != c["title"]:
+            c = maybe_translate(c)
+            budget[0] -= 1
+        maybe_push(c, cfg)
+        con.commit()
+
+
 def run_once():
     cfg = settings.load()
     cl = cfg.get("clustering") or {}
+    first_run = db.get_state("last_entry_id") is None
     raw = fetch_new_entries()
+    log.info("Miniflux: %d nieuwe artikelen", len(raw))
     if not raw:
         translate_backlog(settings.TRANSLATE_PER_RUN)
         return 0
-    entries = [normalize(e, cfg) for e in raw if e.get("title")]
-    clusters = open_clusters(int(cl.get("window_hours", 48)))
-    touched = set()
+    max_id = raw[-1]["id"]
     con = db.con()
-    for i in range(0, len(entries), 16):
-        chunk = entries[i:i + 16]
-        vecs = ai.embed([f"{e['title']}. {e['text'][:800]}" for e in chunk])
+    # al verwerkte artikelen overslaan vóór het (dure) embedden
+    entries = [normalize(e, cfg) for e in raw if e.get("title")
+               and not con.execute("SELECT 1 FROM entries WHERE id=?", (e["id"],)).fetchone()]
+    if first_run:
+        entries.reverse()  # eerste keer: nieuwste eerst, zodat je meteen iets ziet
+    clusters = open_clusters(int(cl.get("window_hours", 48)))
+    budget = [settings.TRANSLATE_PER_RUN]
+    done = 0
+    for i in range(0, len(entries), settings.EMBED_BATCH):
+        chunk = entries[i:i + settings.EMBED_BATCH]
+        # kop + begin van de tekst is genoeg om onderwerpen te herkennen en veel sneller op een CPU
+        vecs = ai.embed([f"{e['title']}. {e['text'][:settings.EMBED_CHARS]}" for e in chunk])
+        touched = set()
         with db._lock:
             for e, v in zip(chunk, vecs):
-                if con.execute("SELECT 1 FROM entries WHERE id=?", (e["id"],)).fetchone():
-                    continue
                 cid = assign(e, v, clusters, float(cl.get("similarity", 0.82)))
                 con.execute(
-                    "INSERT INTO entries(id, cluster_id, title, url, text, image, feed_title, site, category, origin, is_official, published_at)"
+                    "INSERT OR IGNORE INTO entries(id, cluster_id, title, url, text, image, feed_title, site, category, origin, is_official, published_at)"
                     " VALUES(:id, :cid, :title, :url, :text, :image, :feed_title, :site, :category, :origin, :is_official, :published_at)",
                     {**e, "cid": cid},
                 )
                 touched.add(cid)
             con.commit()
-        db.set_state("last_entry_id", chunk[-1]["id"])
-    translated = 0
-    for cid in touched:
-        c = refresh_cluster(cid, cfg)
-        maybe_summarize(c)
-        if translated < settings.TRANSLATE_PER_RUN and c.get("translated_title") != c["title"]:
-            c = maybe_translate(c)
-            translated += 1
-        maybe_push(c, cfg)
-        con.commit()
-    log.info("%d artikelen verwerkt, %d verhalen bijgewerkt", len(entries), len(touched))
+        _finish_clusters(touched, cfg, budget)  # per blokje: verhalen verschijnen meteen in de app
+        done += len(chunk)
+        if not first_run:
+            db.set_state("last_entry_id", chunk[-1]["id"])
+        log.info("verwerkt: %d/%d", done, len(entries))
+    db.set_state("last_entry_id", max_id)
     return len(entries)

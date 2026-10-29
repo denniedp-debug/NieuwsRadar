@@ -13,8 +13,8 @@ log = logging.getLogger("radar.ai")
 def embed(texts: list[str]) -> list[np.ndarray]:
     r = httpx.post(
         f"{settings.OLLAMA_URL}/api/embed",
-        json={"model": settings.EMBED_MODEL, "input": texts},
-        timeout=120,
+        json={"model": settings.EMBED_MODEL, "input": texts, "keep_alive": "30m"},
+        timeout=600,
     )
     r.raise_for_status()
     out = []
