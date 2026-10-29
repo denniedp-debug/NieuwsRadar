@@ -43,7 +43,7 @@ def check_kev(cfg: dict):
         hits = watch_hits(f"{v.get('vendorProject', '')} {v.get('product', '')} {v.get('vulnerabilityName', '')}", cfg.get("watchlist"))
         should_push = (not first_run) and rule.get("enabled") and (hits or not rule.get("only_watchlist", True))
         if should_push:
-            push.send("Actief misbruikt: " + title, msg, click=link, priority=5, tags=["rotating_light"])
+            push.send("Actief misbruikt: " + title, msg, click=link, priority=5, tags=["rotating_light"], topic="security")
         _record(key, "kev", title, msg, link)
     db.set_state("kev_initialized", True)  # eerste run: alleen vastleggen, niet spammen
 
@@ -63,7 +63,7 @@ def check_ncsc(cfg: dict):
         m = _NCSC_LEVEL.search(title)
         high_high = bool(m and m.group(1) == "H" and m.group(2) == "H")
         if high_high and rule.get("enabled") and not first_run:
-            push.send("NCSC H/H: " + title, item.get("summary", "")[:500], click=item.get("link"), priority=5, tags=["warning"])
+            push.send("NCSC H/H: " + title, item.get("summary", "")[:500], click=item.get("link"), priority=5, tags=["warning"], topic="security")
         _record(key, "ncsc", title, item.get("summary", "")[:500], item.get("link"))
     db.set_state("ncsc_initialized", True)
 

@@ -1,6 +1,6 @@
 # NieuwsRadar
 
-Eigen nieuwsoverzicht in Docker dat alleen nieuws als **bevestigd** markeert als meerdere *onafhankelijke* bronnen het melden. Daarnaast stuurt het pushmeldingen bij belangrijke IT-lekken en houdt het webpagina's in de gaten op wijzigingen. De interface is een installeerbare PWA in Material 3-stijl.
+Eigen nieuwsoverzicht in Docker dat alleen nieuws als **bevestigd** markeert als meerdere *onafhankelijke* bronnen het melden. Daarnaast stuurt het pushmeldingen (Web Push in de PWA, optioneel ook via ntfy) bij belangrijke IT-lekken en houdt het webpagina's in de gaten op wijzigingen. De interface is een installeerbare PWA in Material 3-stijl.
 
 ## Hoe het werkt
 
@@ -63,10 +63,11 @@ cp .env.example .env          # wachtwoorden invullen
 docker compose up -d
 ```
 
-1. Open Miniflux op `http://<server>:8081`, log in met je admin-gegevens en importeer `feeds.opml` (*Feeds › Importeren*).
+1. Open Miniflux op `http://<server>:8281`, log in met je admin-gegevens en importeer `feeds.opml` (*Feeds › Importeren*).
 2. Maak in Miniflux een API-sleutel aan (*Instellingen › API-sleutels*), zet die in `.env` als `MINIFLUX_API_KEY` en voer `docker compose up -d radar` uit.
-3. Installeer de **ntfy**-app (Android/iOS), voeg je server toe (`http://<server>:8082`) en abonneer op het topic uit `.env` (standaard `nieuwsradar`).
-4. Open de PWA op `http://<server>:8080`. Voor installeren als app en de service worker is **HTTPS** nodig, behalve op `localhost`. Zet er dus een reverse proxy voor (Caddy, Traefik, Nginx Proxy Manager) of gebruik Tailscale.
+3. Open de PWA via **https**, klik op **Meldingen aanzetten** en daarna op **Testmelding**. Doe dit op elk apparaat waar je meldingen wilt. Op iPhone/iPad moet je de app eerst op het beginscherm zetten (*Deel › Zet op beginscherm*, iOS 16.4 of nieuwer).
+   Wil je ook de ntfy-app gebruiken? Zet `COMPOSE_PROFILES=ntfy` en `NTFY_URL=http://ntfy:80`, installeer de ntfy-app en abonneer op het topic (standaard `nieuwsradar`) op `http://<server>:8282`.
+4. Open de PWA op `http://<server>:8280`. Voor installeren als app en de service worker is **HTTPS** nodig, behalve op `localhost`. Zet er dus een reverse proxy voor (Caddy, Traefik, Nginx Proxy Manager) of gebruik Tailscale.
 
 ### RD.nl met je account
 
@@ -90,6 +91,6 @@ Geen enkele bron is neutraal. Daarom staan er Israëlische media uit verschillen
 ```bash
 cd radar
 pip install -r requirements.txt
-RADAR_DB=./dev.db RADAR_CONFIG=../config.yaml MINIFLUX_URL=http://localhost:8081 \
-MINIFLUX_API_KEY=... OLLAMA_URL=http://localhost:11434 uvicorn app.main:app --reload --port 8080
+RADAR_DB=./dev.db RADAR_CONFIG=../config.yaml MINIFLUX_URL=http://localhost:8281 \
+MINIFLUX_API_KEY=... OLLAMA_URL=http://localhost:11434 uvicorn app.main:app --reload --port 8280
 ```

@@ -179,6 +179,7 @@ def maybe_push(c: dict, cfg: dict):
         click=f"{settings.PUBLIC_URL}/#/c/{c['id']}",
         priority=5 if critical else 4,
         tags=["rotating_light"] if critical else ["newspaper"],
+        topic="security" if critical else "news",
     )
     if ok:
         db.con().execute(

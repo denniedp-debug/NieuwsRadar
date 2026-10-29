@@ -70,7 +70,7 @@ def check(w: dict, force=False) -> dict | None:
             title, body = f"{w['name']}: {lines[0]}", "\n".join(lines[1:]).strip()
         else:
             title, body = w["name"], text
-        push.send(title, body or text, click=w["url"], priority=int(w.get("priority", 3)), tags=w.get("tags") or ["bell"])
+        push.send(title, body or text, click=w["url"], priority=int(w.get("priority", 3)), tags=w.get("tags") or ["bell"], topic="watch:" + w["name"])
         db.con().execute(
             "INSERT OR REPLACE INTO alerts(key, kind, title, message, url, at) VALUES(?,?,?,?,?,?)",
             (f"{key}|{digest[:12]}", "watch", title, body, w["url"], st["changed"]),

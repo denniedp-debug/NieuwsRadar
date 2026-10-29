@@ -80,13 +80,92 @@
           ${items.length >= state.limit ? '<button class="tonal more" id="more">Meer laden</button>' : ''}
         </section>
         <aside class="side">
-          <div class="panel"><h3>Pushregels</h3><p>Meldingen via ntfy, topic <b>${esc(cfg.ntfyTopic)}</b>.</p>${rules}</div>
+          <div class="panel" id="pushPanel"><h3>Meldingen op dit apparaat</h3><p>Even kijken…</p></div>
+          <div class="panel"><h3>Pushregels</h3><p>Bepaalt wanneer je een melding krijgt.</p>${rules}</div>
           ${watchHtml}
           <div class="panel"><h3>Watchlist</h3><div class="tags">${cfg.watchlist.map((w) => `<span class="tag">${esc(w)}</span>`).join('')}</div></div>
           <div class="panel"><h3>Zo telt de radar</h3><p>Overgenomen ANP-, Reuters- of AP-tekst telt als één bron. Bevestigd = 2+ bronnen met eigen herkomst binnen 48 uur.</p>
           <p>Laatste run: ${cfg.lastRun ? esc(ago(cfg.lastRun)) : 'nog niet'}</p></div>
         </aside>
       </div>`;
+    updatePushPanel();
+  }
+
+  // ---------- Web Push ----------
+  const pushSupported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  const isIos = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  function b64ToBytes(b64) {
+    const pad = '='.repeat((4 - (b64.length % 4)) % 4);
+    const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+    return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+  }
+  async function currentSub() {
+    const reg = await navigator.serviceWorker.ready;
+    return reg.pushManager.getSubscription();
+  }
+  async function updatePushPanel(msg) {
+    const el = document.getElementById('pushPanel');
+    if (!el) return;
+    const h = '<h3>Meldingen op dit apparaat</h3>';
+    if (!window.isSecureContext) { el.innerHTML = h + '<p>Open de app via https om meldingen te kunnen aanzetten.</p>'; return; }
+    if (isIos && !standalone) { el.innerHTML = h + '<p>Op iPhone/iPad: tik op <b>Deel › Zet op beginscherm</b> en open NieuwsRadar vanaf het beginscherm. Daarna kun je hier meldingen aanzetten.</p>'; return; }
+    if (!pushSupported) { el.innerHTML = h + '<p>Deze browser ondersteunt geen pushmeldingen.</p>'; return; }
+    if (Notification.permission === 'denied') { el.innerHTML = h + '<p>Meldingen zijn geblokkeerd. Sta ze toe in de site-instellingen van je browser.</p>'; return; }
+    const sub = await currentSub().catch(() => null);
+    let prefsHtml = '';
+    if (sub) {
+      const r = await api('/api/push/prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ endpoint: sub.endpoint }) }).catch(() => null);
+      if (!r) { await sub.unsubscribe().catch(() => {}); return updatePushPanel('Dit apparaat was niet meer bekend. Zet meldingen opnieuw aan.'); }
+      const p = r.prefs;
+      const row = (key, label, hint, on) => `<label class="rule"><span>${esc(label)}<small>${esc(hint)}</small></span>
+        <input class="switch" type="checkbox" role="switch" data-pref="${esc(key)}" ${on ? 'checked' : ''}></label>`;
+      prefsHtml = '<p style="margin-top:6px">Wat wil je op dit apparaat ontvangen?</p>'
+        + row('news', 'Nieuws', 'Volgens de pushregels hieronder', p.news)
+        + row('security', 'IT-beveiliging', 'Kritieke lekken, NCSC en CISA', p.security)
+        + r.watchers.map((w) => row('watch:' + w, w, 'Paginawachter', p.watchers === 'all' || p.watchers.includes(w))).join('');
+    }
+    el.innerHTML = h + (sub
+      ? `${prefsHtml}
+         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px"><button class="tonal" id="pushTest">Testmelding</button>
+         <button class="chip" id="pushOff">Uitzetten</button></div>`
+      : `<p>Uit. Zet meldingen aan om kritieke lekken en wijzigingen meteen te zien.</p>
+         <button class="tonal" id="pushOn">Meldingen aanzetten</button>`) + (msg ? `<p style="margin:10px 0 0">${esc(msg)}</p>` : '');
+  }
+  async function pushOn() {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') return updatePushPanel('Toestemming niet gegeven.');
+    const { publicKey } = await api('/api/push/key');
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(publicKey) });
+    const label = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+    await api('/api/push/subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subscription: sub.toJSON(), label }) });
+    updatePushPanel('Meldingen staan aan.');
+  }
+  async function pushOff() {
+    const sub = await currentSub();
+    if (sub) {
+      await api('/api/push/unsubscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ endpoint: sub.endpoint }) }).catch(() => {});
+      await sub.unsubscribe();
+    }
+    updatePushPanel();
+  }
+  async function pushTest() {
+    const sub = await currentSub();
+    if (!sub) return updatePushPanel();
+    const r = await api('/api/push/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ endpoint: sub.endpoint }) });
+    updatePushPanel(r.sent ? 'Testmelding verstuurd.' : 'Versturen mislukt. Zet meldingen uit en weer aan.');
+  }
+
+  async function savePrefs() {
+    const sub = await currentSub();
+    if (!sub) return;
+    const boxes = [...document.querySelectorAll('[data-pref]')];
+    const val = (k) => boxes.find((b) => b.dataset.pref === k)?.checked ?? true;
+    const w = boxes.filter((b) => b.dataset.pref.startsWith('watch:'));
+    const prefs = { news: val('news'), security: val('security'),
+      watchers: w.every((b) => b.checked) ? 'all' : w.filter((b) => b.checked).map((b) => b.dataset.pref.slice(6)) };
+    await api('/api/push/prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ endpoint: sub.endpoint, prefs }) });
   }
 
   // ---------- Detail ----------
@@ -126,14 +205,20 @@
   window.addEventListener('hashchange', route);
 
   app.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-tab],[data-dismiss],#more,#testWatch');
+    const t = e.target.closest('[data-tab],[data-dismiss],#more,#testWatch,#pushOn,#pushOff,#pushTest');
     if (!t) return;
+    if (t.id === 'pushOn' || t.id === 'pushOff' || t.id === 'pushTest') {
+      t.disabled = true;
+      ({ pushOn, pushOff, pushTest })[t.id]().catch((err) => updatePushPanel('Mislukt: ' + err.message));
+      return;
+    }
     if (t.id === 'testWatch') { t.disabled = true; t.textContent = 'Verstuurd'; api('/api/watchers/test', { method: 'POST' }).then(renderFeed).catch(() => {}); return; }
     if (t.dataset.tab) { state.tab = t.dataset.tab; state.limit = 30; localSet('tab', state.tab); renderFeed(); }
     else if (t.dataset.dismiss) { state.dismissed = t.dataset.dismiss; localSet('dismissed', state.dismissed); renderFeed(); }
     else if (t.id === 'more') { state.limit += 30; renderFeed(); }
   });
   app.addEventListener('change', async (e) => {
+    if (e.target.closest('[data-pref]')) return savePrefs();
     const t = e.target.closest('[data-rule]');
     if (!t) return;
     await api('/api/rules/' + t.dataset.rule, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: t.checked }) });

@@ -177,9 +177,65 @@ def test_watchers():
         st = watchers.check(w, force=True) or {}
         lines = (st.get("text") or "").splitlines()
         if lines:
-            push.send(f"[test] {w['name']}: {lines[0]}", "\n".join(lines[1:]), click=w["url"], priority=2)
+            push.send(f"[test] {w['name']}: {lines[0]}", "\n".join(lines[1:]), click=w["url"], priority=2, topic="watch:" + w["name"])
         out.append({"name": w["name"], "found": bool(lines)})
     return out
+
+
+class Subscription(BaseModel):
+    subscription: dict
+    label: str = ""
+
+
+class Endpoint(BaseModel):
+    endpoint: str
+
+
+@app.get("/api/push/key")
+def push_key():
+    from . import webpush
+    return {"publicKey": webpush.public_key(), "devices": webpush.count(), "ntfy": bool(settings.NTFY_URL)}
+
+
+@app.post("/api/push/subscribe")
+def push_subscribe(body: Subscription):
+    from . import webpush
+    try:
+        webpush.subscribe(body.subscription, body.label)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "devices": webpush.count()}
+
+
+@app.post("/api/push/unsubscribe")
+def push_unsubscribe(body: Endpoint):
+    from . import webpush
+    webpush.unsubscribe(body.endpoint)
+    return {"ok": True}
+
+
+class Prefs(BaseModel):
+    endpoint: str
+    prefs: dict | None = None
+
+
+@app.post("/api/push/prefs")
+def push_prefs(body: Prefs):
+    """Zonder prefs: huidige voorkeuren opvragen. Met prefs: opslaan."""
+    from . import webpush
+    if body.prefs is not None:
+        webpush.set_prefs(body.endpoint, body.prefs)
+    cur = webpush.get_prefs(body.endpoint)
+    if cur is None:
+        raise HTTPException(404, "onbekend apparaat")
+    return {"prefs": cur, "watchers": [w["name"] for w in settings.load().get("watchers") or []]}
+
+
+@app.post("/api/push/test")
+def push_test(body: Endpoint):
+    from . import webpush
+    n = webpush.send("NieuwsRadar", "Meldingen werken op dit apparaat.", url="/", priority=3, endpoint=body.endpoint)
+    return {"sent": n}
 
 
 @app.get("/health")
