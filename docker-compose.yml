@@ -87,7 +87,9 @@ services:
 
   # --- De radar zelf: controle, pushregels en PWA ------------------------
   radar:
-    build: ./radar
+    build:
+      context: .
+      dockerfile: radar/Dockerfile
     image: nieuwsradar/radar:latest
     restart: unless-stopped
     depends_on: [miniflux, ollama, ntfy]
@@ -106,7 +108,7 @@ services:
       TZ: Europe/Amsterdam
     volumes:
       - radar-data:/data
-      - ./config.yaml:/app/config.yaml:ro
+    # config.yaml zit in de image: wijzig hem in GitHub en doe "Pull and redeploy" in Portainer.
 
 volumes:
   miniflux-db:

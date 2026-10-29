@@ -1,0 +1,6 @@
+# Alleen voor lokaal bouwen; Portainer gebruikt de image van ghcr.io.
+services:
+  radar:
+    build:
+      context: .
+      dockerfile: radar/Dockerfile
