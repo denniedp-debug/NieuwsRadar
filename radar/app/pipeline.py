@@ -158,6 +158,7 @@ def maybe_translate(c: dict) -> dict:
         db.con().execute("UPDATE clusters SET lang='nl', translated_title=? WHERE id=?", (c["title"], c["id"]))
         return c
     res = ai.translate(c["title"], teaser)
+    log.info("vertaald: %s -> %s", c["title"][:60], (res or {}).get("title", "(mislukt)")[:60])
     if res:
         db.con().execute(
             "UPDATE clusters SET lang='en', title_nl=?, teaser_nl=?, translated_title=? WHERE id=?",
@@ -311,4 +312,5 @@ def run_once():
             db.set_state("last_entry_id", chunk[-1]["id"])
         log.info("verwerkt: %d/%d", done, len(entries))
     db.set_state("last_entry_id", max_id)
+    translate_backlog(budget[0])  # resterende vertaalruimte gebruiken voor oudere Engelse verhalen
     return len(entries)
