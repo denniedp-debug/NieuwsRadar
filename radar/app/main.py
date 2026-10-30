@@ -17,8 +17,28 @@ log = logging.getLogger("radar")
 STATIC = Path(__file__).parent / "static"
 
 
+def cleanup():
+    """Verhalen ouder dan RETENTION_DAYS (en hun artikelen/leesstatus) verwijderen."""
+    from datetime import timedelta
+    since = pipeline.iso(pipeline.now() - timedelta(days=settings.RETENTION_DAYS))
+    con = db.con()
+    with db._lock:
+        old = [r[0] for r in con.execute("SELECT id FROM clusters WHERE updated_at < ?", (since,))]
+        for i in range(0, len(old), 500):
+            ids = old[i:i + 500]
+            q = ",".join("?" * len(ids))
+            con.execute(f"DELETE FROM entries WHERE cluster_id IN ({q})", ids)
+            con.execute(f"DELETE FROM reads WHERE cluster_id IN ({q})", ids)
+            con.execute(f"DELETE FROM clusters WHERE id IN ({q})", ids)
+        con.commit()
+        if old:
+            con.execute("VACUUM")
+    if old:
+        log.info("opgeruimd: %d oude verhalen", len(old))
+
+
 def worker():
-    last_news = last_security = 0.0
+    last_news = last_security = last_cleanup = 0.0
     while True:
         if time.time() - last_news >= settings.INTERVAL_SECONDS:
             try:
@@ -30,6 +50,12 @@ def worker():
         if time.time() - last_security >= 900:  # elk kwartier
             security.run_once(settings.load())
             last_security = time.time()
+        if time.time() - last_cleanup >= 6 * 3600:
+            try:
+                cleanup()
+            except Exception as e:
+                log.warning("opruimen mislukt: %s", e)
+            last_cleanup = time.time()
         try:
             watchers.run_once(settings.load())  # eigen interval per wachter
         except Exception as e:
@@ -81,6 +107,7 @@ def _card(c, with_sources=False):
         "lead": ", ".join(dict.fromkeys(s["feed_title"] for s in src))[:60],
     }
     if with_sources:
+        low = {d.lower().removeprefix("www.") for d in (settings.load().get("low_trust") or [])}
         extra = json.loads(c["facts"] or "{}") if (c["facts"] or "").startswith("{") else {}
         out.update({
             "summary": c["summary"],
@@ -89,7 +116,7 @@ def _card(c, with_sources=False):
             "pushReason": c["push_reason"],
             "maxCvss": c["max_cvss"],
             "watchHits": json.loads(c["watch_hits"] or "[]"),
-            "sources": src,
+            "sources": [{**x, "lowTrust": x["site"].removeprefix("www.") in low or x["origin"] in low} for x in src],
             "hidden": bool(c.get("hidden")),
             "hideReason": c.get("hide_reason"),
         })
@@ -97,7 +124,9 @@ def _card(c, with_sources=False):
 
 
 @app.get("/api/clusters")
-def list_clusters(cat: str = "all", q: str = "", limit: int = 60):
+def list_clusters(cat: str = "all", q: str = "", limit: int = 60, device: str = "", view: str = "feed"):
+    """view=feed: ongelezen en recent · view=archive: door dit apparaat gelezen · zoeken: alles."""
+    from datetime import timedelta
     sql = "SELECT * FROM clusters WHERE 1=1"
     args = []
     sql += " AND COALESCE(hidden, 0) = 1" if cat == "hidden" else " AND COALESCE(hidden, 0) = 0"
@@ -108,13 +137,80 @@ def list_clusters(cat: str = "all", q: str = "", limit: int = 60):
     else:
         sql += " AND category=?"
         args.append(cat)
+    read_sql = "SELECT cluster_id FROM reads WHERE device=?"
     if q:
         sql += " AND (title_nl LIKE ? OR id IN (SELECT cluster_id FROM entries WHERE title LIKE ? OR text LIKE ?))"
         args += [f"%{q}%", f"%{q}%", f"%{q}%"]
-    # Belangrijkste eerst: kritiek, dan bevestigd met veel bronnen, dan recent
-    sql += " ORDER BY critical DESC, (status='waiting') ASC, date(updated_at) DESC, n_sources DESC, updated_at DESC LIMIT ?"
+    elif view == "archive":
+        sql += f" AND id IN ({read_sql})"
+        args.append(device)
+    elif cat != "hidden":
+        since = pipeline.iso(pipeline.now() - timedelta(hours=settings.FEED_MAX_AGE_HOURS))
+        sql += f" AND updated_at >= ? AND id NOT IN ({read_sql})"
+        args += [since, device]
+    if view == "archive" and not q:
+        sql += " ORDER BY (SELECT at FROM reads WHERE device=? AND cluster_id=clusters.id) DESC LIMIT ?"
+        args.append(device)
+    else:
+        # Belangrijkste eerst: kritiek, dan bevestigd met veel bronnen, dan recent
+        sql += " ORDER BY critical DESC, (status='waiting') ASC, date(updated_at) DESC, n_sources DESC, updated_at DESC LIMIT ?"
     args.append(min(limit, 200))
-    return [_card(dict(r)) for r in db.con().execute(sql, args).fetchall()]
+    read_ids = {r[0] for r in db.con().execute(read_sql, (device,))} if device else set()
+    return [{**_card(dict(r)), "read": r["id"] in read_ids} for r in db.con().execute(sql, args).fetchall()]
+
+
+class ReadBody(BaseModel):
+    device: str
+    ids: list[int]
+    read: bool = True
+
+
+@app.post("/api/read")
+def mark_read(body: ReadBody):
+    """Gelezen/gearchiveerd per apparaat (zo heeft ieder toestel een eigen lijst)."""
+    if not body.device or len(body.device) > 64:
+        raise HTTPException(400)
+    con = db.con()
+    with db._lock:
+        for cid in body.ids[:500]:
+            if body.read:
+                con.execute("INSERT OR IGNORE INTO reads(device, cluster_id, at) VALUES(?,?,datetime('now'))", (body.device, cid))
+            else:
+                con.execute("DELETE FROM reads WHERE device=? AND cluster_id=?", (body.device, cid))
+        con.commit()
+    return {"ok": True}
+
+
+_weather = {"at": 0.0, "data": None}
+
+
+@app.get("/api/weather")
+def weather():
+    """Actueel weer via Open-Meteo (gratis, geen sleutel). 10 minuten gecachet."""
+    import httpx
+    if _weather["data"] and time.time() - _weather["at"] < 600:
+        return _weather["data"]
+    try:
+        r = httpx.get("https://api.open-meteo.com/v1/forecast", params={
+            "latitude": settings.WEATHER_LAT, "longitude": settings.WEATHER_LON,
+            "current": "temperature_2m,weather_code,is_day,precipitation",
+            "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+            "timezone": "Europe/Amsterdam", "forecast_days": 1}, timeout=15)
+        r.raise_for_status()
+        j = r.json()
+        cur, day = j.get("current", {}), j.get("daily", {})
+        _weather["data"] = {
+            "place": settings.WEATHER_PLACE,
+            "temp": cur.get("temperature_2m"), "code": cur.get("weather_code"), "isDay": bool(cur.get("is_day", 1)),
+            "max": (day.get("temperature_2m_max") or [None])[0], "min": (day.get("temperature_2m_min") or [None])[0],
+            "rainChance": (day.get("precipitation_probability_max") or [None])[0],
+        }
+        _weather["at"] = time.time()
+    except Exception as e:
+        log.warning("weer ophalen mislukt: %s", e)
+        if not _weather["data"]:
+            raise HTTPException(503)
+    return _weather["data"]
 
 
 @app.get("/api/clusters/{cid}")

@@ -53,6 +53,8 @@ def connect():
     ecols = [r[1] for r in con.execute("PRAGMA table_info(entries)")]
     if "full_text" not in ecols:
         con.execute("ALTER TABLE entries ADD COLUMN full_text TEXT")
+    con.execute("""CREATE TABLE IF NOT EXISTS reads (
+      device TEXT, cluster_id INTEGER, at TEXT, PRIMARY KEY (device, cluster_id))""")
     con.execute("""CREATE TABLE IF NOT EXISTS negatives (
       id INTEGER PRIMARY KEY AUTOINCREMENT, cluster_id INTEGER UNIQUE, title TEXT, vec BLOB, at TEXT)""")
     con.commit()

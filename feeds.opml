@@ -26,6 +26,7 @@
     <outline text="Nederland" title="Nederland">
       <outline type="rss" text="NOS Algemeen" xmlUrl="https://feeds.nos.nl/nosnieuwsalgemeen" htmlUrl="https://nos.nl/"/>
       <outline type="rss" text="NU.nl Algemeen" xmlUrl="https://www.nu.nl/rss/Algemeen" htmlUrl="https://www.nu.nl/"/>
+      <outline type="rss" text="De Telegraaf Nieuws" xmlUrl="https://www.telegraaf.nl/nieuws/rss" htmlUrl="https://www.telegraaf.nl/"/>
       <outline type="rss" text="RD.nl Binnenland" xmlUrl="https://www.rd.nl/rss-feed?slug=binnenland" htmlUrl="https://www.rd.nl/"/>
       <outline type="rss" text="RD.nl Politiek" xmlUrl="https://www.rd.nl/rss-feed?slug=politiek" htmlUrl="https://www.rd.nl/"/>
     </outline>

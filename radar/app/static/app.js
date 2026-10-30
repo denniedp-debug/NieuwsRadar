@@ -1,7 +1,12 @@
 (() => {
   const app = document.getElementById('app');
   const TABS = [['all', 'Alles'], ['ok', 'Bevestigd'], ['it', 'IT-security'], ['il', 'Israël'], ['nl', 'Nederland'], ['kerk', 'Kerk'], ['tech', 'Tech'], ['world', 'Wereld']];
-  const state = { tab: localGet('tab') || 'all', q: '', limit: 30, dismissed: localGet('dismissed') || '' };
+  const state = { tab: localGet('tab') || 'all', q: '', limit: 30 };
+  // eigen id per apparaat: zo heeft ieder toestel een eigen 'gelezen'-lijst
+  const DEVICE = localGet('device') || (() => {
+    const id = (self.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+    localSet('device', id); return id;
+  })();
 
   function localGet(k) { try { return localStorage.getItem('nr:' + k); } catch { return null; } }
   function localSet(k, v) { try { localStorage.setItem('nr:' + k, v); } catch {} }
@@ -40,16 +45,19 @@
 
   // ---------- Feed ----------
   async function renderFeed() {
-    const items = await api(`/api/clusters?cat=${encodeURIComponent(state.tab)}&q=${encodeURIComponent(state.q)}&limit=${state.limit}`);
+    const items = await api(`/api/clusters?cat=${encodeURIComponent(state.tab)}&q=${encodeURIComponent(state.q)}&limit=${state.limit}&device=${encodeURIComponent(DEVICE)}&view=feed`);
     const crit = items.find((c) => c.critical && Date.now() - new Date(c.updatedAt) < 864e5);
-    const snack = crit && String(crit.id) !== state.dismissed
+    const snack = crit && !crit.read
       ? `<div class="snack" role="status"><div class="t"><b>Kritiek: ${esc(crit.title)}</b><span>Bevestigd door ${crit.independent} bronnen · ${esc(ago(crit.updatedAt))}</span></div>
-         <a href="#/c/${crit.id}">Openen</a><button data-dismiss="${crit.id}" aria-label="Melding sluiten">✕</button></div>` : '';
+         <a href="#/c/${crit.id}">Openen</a><button data-read="${crit.id}" aria-label="Gelezen, melding sluiten">✕</button></div>` : '';
     const chips = TABS.map(([id, label]) =>
       `<button class="chip" data-tab="${id}" aria-pressed="${state.tab === id}">${state.tab === id ? check : ''}${label}</button>`).join('');
     const compact = (localGet('view') || 'compact') === 'compact';
     const eye = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.9 17.9A10 10 0 0 1 12 20c-7 0-10-8-10-8a18 18 0 0 1 5.1-5.9M9.9 4.2A9 9 0 0 1 12 4c7 0 10 8 10 8a18 18 0 0 1-2.2 3.2M14.1 14.1a3 3 0 1 1-4.2-4.2M2 2l20 20"/></svg>';
-    const hideBtn = (c) => `<button class="hide-btn" data-hide="${c.id}" aria-label="Niet interessant: ${esc(c.title)}" title="Niet interessant">${eye}</button>`;
+    const tick = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>';
+    const hideBtn = (c) => `<div class="card-actions">
+      <button class="hide-btn" data-read="${c.id}" aria-label="Archiveren: ${esc(c.title)}" title="Archiveren (gelezen)">${tick}</button>
+      <button class="hide-btn" data-hide="${c.id}" aria-label="Niet interessant: ${esc(c.title)}" title="Niet interessant">${eye}</button></div>`;
     const metaLine = (c) => `${esc(c.categoryLabel)} · ${esc(ago(c.updatedAt))}${c.originalTitle ? ' · vertaald' : ''}`;
     const cards = items.map((c, i) => compact ? `
       <article class="card-wrap row" data-card="${c.id}">
@@ -80,8 +88,9 @@
         <div id="undo"></div>
         ${snack}
         <nav class="chips" aria-label="Rubriek">${chips}</nav>
-        <h2 class="section-h">${state.q ? 'Zoekresultaten voor “' + esc(state.q) + '”' : 'Voor jou · ' + new Date().toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' })}</h2>
-        ${cards || '<div class="empty">Nog niets hier. De radar haalt elke 5 minuten nieuwe artikelen op.</div>'}
+        <div class="section-row"><h2 class="section-h">${state.q ? 'Zoekresultaten voor “' + esc(state.q) + '”' : 'Voor jou · ' + new Date().toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' })}</h2>
+          ${items.length && !state.q ? `<button class="text-btn" data-readall="${items.map((c) => c.id).join(',')}">Alles gelezen</button>` : ''}</div>
+        ${cards || (state.q ? '<div class="empty">Niets gevonden.</div>' : '<div class="empty">Je bent bij! Gelezen verhalen staan in <a href="#/archief">Archief</a>.</div>')}
         ${items.length >= state.limit ? '<button class="tonal more" id="more">Meer laden</button>' : ''}
       </section>`;
   }
@@ -126,6 +135,26 @@
         ${hidden.length ? '<ul class="srcs">' + hidden.map((c) => `<li><span style="display:flex;align-items:center;gap:12px;min-height:52px">
           <a href="#/c/${c.id}" style="flex:1;min-width:0;color:var(--on)">${esc(c.title)}</a>
           <button class="chip" data-unhide="${c.id}">Terugzetten</button></span></li>`).join('') + '</ul>' : '<p>Niets verborgen.</p>'}</div>`);
+  }
+
+  function markRead(ids, read = true) {
+    return api('/api/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device: DEVICE, ids: ids.map(Number), read }) });
+  }
+
+  function undoBar(text, attr, value) {
+    const u = document.getElementById('undo');
+    if (u) u.innerHTML = `<div class="snack" role="status"><div class="t"><b>${text}</b></div><button ${attr}="${value}">Ongedaan maken</button></div>`;
+  }
+
+  async function renderArchief() {
+    const items = await api(`/api/clusters?view=archive&device=${encodeURIComponent(DEVICE)}&limit=100`);
+    app.innerHTML = page('Archief', `
+      <p class="muted" style="margin:-6px 0 4px">Wat je op dit apparaat hebt gelezen of gearchiveerd. Na ${30} dagen wordt het opgeruimd.</p>
+      ${items.length ? '<div class="panel"><ul class="srcs">' + items.map((c) => `<li><span style="display:flex;align-items:center;gap:12px;min-height:56px">
+        <a href="#/c/${c.id}" style="flex:1;min-width:0;color:var(--on);text-decoration:none"><b style="font-weight:500">${esc(c.title)}</b>
+          <small style="display:block;color:var(--on-var)">${esc(c.categoryLabel)} · ${esc(ago(c.updatedAt))}</small></a>
+        <button class="chip" data-unread="${c.id}">Terugzetten</button></span></li>`).join('') + '</ul></div>'
+      : '<div class="panel"><p>Nog niets gelezen op dit apparaat.</p></div>'}`);
   }
 
   async function setHidden(id, hidden) {
@@ -240,11 +269,12 @@
   // ---------- Detail ----------
   async function renderDetail(id) {
     const c = await api('/api/clusters/' + encodeURIComponent(id));
+    markRead([c.id], true).catch(() => {});
     const facts = (c.facts || []).map((f) => `<li><span class="check">${check}</span><span>${esc(f.text)} <small style="color:var(--on-var)">(${esc((f.by || []).join(', '))})</small></span></li>`).join('');
     const disputed = (c.disputed || []).map((d) => `<li>${esc(d)}</li>`).join('');
     const srcs = c.sources.map((s) => `<li><a href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener">
       <span class="ini">${esc((s.feed_title || '?')[0])}</span>
-      <span style="flex:1;min-width:0"><b style="font-weight:500">${esc(s.feed_title)}</b><small>${esc(s.origin === s.site ? 'eigen redactie' : 'herkomst: ' + s.origin)} · ${esc(ago(s.published_at))}</small><small>${esc(s.title)}</small></span></a></li>`).join('');
+      <span style="flex:1;min-width:0"><b style="font-weight:500">${esc(s.feed_title)}</b><small>${esc(s.origin === s.site ? 'eigen redactie' : 'herkomst: ' + s.origin)} · ${esc(ago(s.published_at))}${s.lowTrust ? ' · telt niet mee voor bevestiging' : ''}</small><small>${esc(s.title)}</small></span></a></li>`).join('');
     app.innerHTML = `
       <a class="back" href="#/"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>Terug</a>
       <div style="display:flex;flex-direction:column;gap:20px;padding:12px 0 40px">
@@ -292,7 +322,7 @@
   }
 
   // ---------- Router & events ----------
-  const PAGES = { '#/filters': renderFilters, '#/meldingen': renderMeldingen, '#/wachters': renderWachters, '#/weergave': renderWeergave, '#/uitleg': renderUitleg };
+  const PAGES = { '#/archief': renderArchief, '#/filters': renderFilters, '#/meldingen': renderMeldingen, '#/wachters': renderWachters, '#/weergave': renderWeergave, '#/uitleg': renderUitleg };
   const isFeed = () => location.hash === '' || location.hash === '#/' || location.hash === '#';
   async function route() {
     const m = location.hash.match(/^#\/c\/(\d+)/);
@@ -307,6 +337,23 @@
   window.addEventListener('hashchange', route);
 
   app.addEventListener('click', (e) => {
+    const r = e.target.closest('[data-read],[data-readall],[data-unread],[data-undoread]');
+    if (r) {
+      e.preventDefault();
+      if (r.dataset.read) {
+        const id = r.dataset.read;
+        markRead([id]).then(() => {
+          document.querySelector(`[data-card="${id}"]`)?.remove();
+          r.closest('.snack')?.remove();
+          undoBar('Gearchiveerd', 'data-undoread', id);
+        }).catch(() => {});
+      } else if (r.dataset.readall) {
+        const ids = r.dataset.readall.split(',');
+        markRead(ids).then(renderFeed).then(() => undoBar(`${ids.length} verhalen gearchiveerd`, 'data-undoread', ids.join(','))).catch(() => {});
+      } else if (r.dataset.undoread) markRead(r.dataset.undoread.split(','), false).then(renderFeed);
+      else if (r.dataset.unread) markRead([r.dataset.unread], false).then(renderArchief);
+      return;
+    }
     const h = e.target.closest('[data-hide],[data-undo],[data-detail-hide],[data-unhide],[data-forget]');
     if (h) {
       e.preventDefault();
@@ -314,8 +361,7 @@
         const id = h.dataset.hide;
         setHidden(id, true).then(() => {
           document.querySelector(`[data-card="${id}"]`)?.remove();
-          const u = document.getElementById('undo');
-          if (u) u.innerHTML = `<div class="snack" role="status"><div class="t"><b>Verborgen</b><span>Vergelijkbare verhalen worden voortaan ook verborgen.</span></div><button data-undo="${id}">Ongedaan maken</button></div>`;
+          undoBar('Verborgen · vergelijkbare verhalen voortaan ook', 'data-undo', id);
         }).catch(() => {});
       } else if (h.dataset.undo) setHidden(h.dataset.undo, false).then(renderFeed);
       else if (h.dataset.detailHide) setHidden(h.dataset.detailHide, h.dataset.state !== 'hidden').then(() => (h.dataset.state === 'hidden' ? renderDetail(h.dataset.detailHide) : (location.hash = '#/')));
@@ -325,7 +371,7 @@
     }
     const src = e.target.closest('[data-src]');
     if (src) { loadArticle(src.dataset.src); return; }
-    const t = e.target.closest('[data-tab],[data-dismiss],#more,#testWatch,#pushOn,#pushOff,#pushTest');
+    const t = e.target.closest('[data-tab],#more,#testWatch,#pushOn,#pushOff,#pushTest');
     if (!t) return;
     if (t.id === 'pushOn' || t.id === 'pushOff' || t.id === 'pushTest') {
       t.disabled = true;
@@ -334,7 +380,6 @@
     }
     if (t.id === 'testWatch') { t.disabled = true; t.textContent = 'Verstuurd'; api('/api/watchers/test', { method: 'POST' }).then(renderWachters).catch(() => {}); return; }
     if (t.dataset.tab) { state.tab = t.dataset.tab; state.limit = 30; localSet('tab', state.tab); renderFeed(); }
-    else if (t.dataset.dismiss) { state.dismissed = t.dataset.dismiss; localSet('dismissed', state.dismissed); renderFeed(); }
     else if (t.id === 'more') { state.limit += 30; renderFeed(); }
   });
   app.addEventListener('change', async (e) => {
@@ -356,6 +401,45 @@
   const drawer = document.getElementById('drawer');
   document.getElementById('menuBtn').addEventListener('click', () => drawer.showModal());
   drawer.addEventListener('click', (e) => { if (e.target === drawer || e.target.closest('a,[data-close]')) drawer.close(); });
+
+  // ---------- Weer ----------
+  const WMO = (code, day) => {
+    const c = Number(code);
+    if (c === 0) return [day ? 'sun' : 'moon', 'onbewolkt'];
+    if (c <= 2) return [day ? 'partly' : 'moon', 'licht bewolkt'];
+    if (c === 3) return ['cloud', 'bewolkt'];
+    if (c === 45 || c === 48) return ['fog', 'mist'];
+    if (c >= 51 && c <= 67) return ['rain', c <= 57 ? 'motregen' : 'regen'];
+    if (c >= 71 && c <= 77) return ['snow', 'sneeuw'];
+    if (c >= 80 && c <= 82) return ['rain', 'buien'];
+    if (c >= 85 && c <= 86) return ['snow', 'sneeuwbuien'];
+    if (c >= 95) return ['storm', 'onweer'];
+    return ['cloud', 'bewolkt'];
+  };
+  const WICON = {
+    sun: '<circle cx="12" cy="12" r="4" fill="#F5B400" stroke="#F5B400"/><path stroke="#F5B400" d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+    moon: '<path fill="#9AA8C7" stroke="#9AA8C7" d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>',
+    partly: '<circle cx="8" cy="8" r="3.2" fill="#F5B400" stroke="#F5B400"/><path stroke="#F5B400" d="M8 1.5v1.5M2.5 8H1M3.4 3.4l1 1M12.6 3.4l-1 1"/><path fill="#C9D1DD" stroke="#9AA3B2" d="M17.5 19H8a4 4 0 1 1 .9-7.9A5 5 0 0 1 18.5 12a3.5 3.5 0 0 1-1 7z"/>',
+    cloud: '<path fill="#C9D1DD" stroke="#9AA3B2" d="M17.5 19H8a5 5 0 1 1 1.2-9.9A6 6 0 0 1 19.4 11a4 4 0 0 1-1.9 8z"/>',
+    rain: '<path fill="#C9D1DD" stroke="#9AA3B2" d="M17.5 15H8a5 5 0 1 1 1.2-9.9A6 6 0 0 1 19.4 7a4 4 0 0 1-1.9 8z"/><path stroke="#3B82F6" d="M8 18l-1 3M12 18l-1 3M16 18l-1 3"/>',
+    snow: '<path fill="#C9D1DD" stroke="#9AA3B2" d="M17.5 15H8a5 5 0 1 1 1.2-9.9A6 6 0 0 1 19.4 7a4 4 0 0 1-1.9 8z"/><path stroke="#7DB7E8" d="M8 18v3M6.5 19.5h3M15 18v3M13.5 19.5h3"/>',
+    fog: '<path stroke="#9AA3B2" d="M3 9h18M5 13h14M3 17h18"/>',
+    storm: '<path fill="#9AA3B2" stroke="#7A8394" d="M17.5 14H8a5 5 0 1 1 1.2-9.9A6 6 0 0 1 19.4 6a4 4 0 0 1-1.9 8z"/><path fill="#F5B400" stroke="#F5B400" d="M12 14l-2 4h3l-1.5 4 4-6h-3l1.5-2z"/>',
+  };
+  async function loadWeather() {
+    const el = document.getElementById('weather');
+    if (!el) return;
+    try {
+      const w = await api('/api/weather');
+      const [icon, desc] = WMO(w.code, w.isDay);
+      const t = Math.round(w.temp);
+      el.innerHTML = `<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${WICON[icon]}</svg>
+        <span class="w-temp">${t}°</span><span class="w-sub">${esc(w.place)}${w.max != null ? ` · ${Math.round(w.min)}°/${Math.round(w.max)}°` : ''}${w.rainChance ? ` · ${w.rainChance}% regen` : ''}</span>`;
+      el.setAttribute('aria-label', `${w.place}: ${t} graden, ${desc}`);
+      el.title = `${w.place}: ${t}°, ${desc}`;
+      el.hidden = false;
+    } catch { el.hidden = true; }
+  }
 
   // ---------- Thema ----------
   function applyTheme() {
@@ -388,5 +472,7 @@
 
   applyFontSize();
   applyTheme();
+  loadWeather();
+  setInterval(loadWeather, 15 * 60000);
   route();
 })();

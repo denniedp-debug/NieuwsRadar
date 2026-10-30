@@ -38,6 +38,12 @@ filters:
     - acteur
     - actrice
 
+# Bronnen die je wel wilt zien, maar die op zichzelf niets bevestigen.
+# Hun artikelen worden aan verhalen gekoppeld en getoond, maar tellen niet mee
+# als "onafhankelijke bron". Alleen-Telegraaf blijft dus "wacht op bevestiging".
+low_trust:
+  - telegraaf.nl
+
 watchlist:
   - PHP
   - Microsoft 365

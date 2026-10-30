@@ -107,7 +107,9 @@ def assign(entry: dict, vec: np.ndarray, clusters: list, threshold: float) -> in
 def refresh_cluster(cid: int, cfg: dict) -> dict:
     con = db.con()
     rows = con.execute("SELECT * FROM entries WHERE cluster_id=? ORDER BY published_at", (cid,)).fetchall()
-    origins = {r["origin"] for r in rows}
+    # bronnen onder "low_trust" tellen niet mee voor bevestiging (ze worden wel getoond)
+    low = {d.lower().removeprefix("www.") for d in (cfg.get("low_trust") or [])}
+    origins = {r["origin"] for r in rows if r["origin"] not in low and r["site"] not in low}
     has_official = any(r["is_official"] for r in rows)
     cats = [r["category"] for r in rows if r["category"] != "official"]
     category = max(set(cats), key=cats.count) if cats else "it"

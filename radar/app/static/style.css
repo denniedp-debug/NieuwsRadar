@@ -192,3 +192,17 @@ button { font: inherit; }
 .article-text p { margin: 0 0 .9em; font-size: 1rem; line-height: 1.65; }
 .article-text { max-width: 68ch; }
 .muted { color: var(--on-var); font-size: .875rem; }
+
+/* ---------- Archief / acties / weer ---------- */
+.card-actions { display: flex; flex-direction: column; gap: 0; position: absolute; z-index: 2; top: 8px; right: 8px; }
+.card-actions .hide-btn { position: static; }
+.card-wrap.row .card-actions { position: static; flex: none; align-self: flex-start; margin: 4px 4px 0 0; }
+.section-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0 -2px; }
+.section-row .section-h { margin: 0; }
+.text-btn { min-height: 40px; padding: 0 12px; border: 0; border-radius: 999px; background: transparent; color: var(--primary); font-weight: 600; font-size: .875rem; cursor: pointer; }
+.text-btn:hover { background: var(--container); }
+.weather { display: inline-flex; align-items: center; gap: 6px; }
+.weather[hidden] { display: none; }
+.w-temp { font-size: 1.375rem; font-weight: 700; color: var(--on); }
+.w-sub { font-size: .8125rem; color: var(--on-var); font-weight: 500; white-space: nowrap; }
+@media (max-width: 360px) { .w-sub { display: none; } }

@@ -115,6 +115,11 @@ services:
       NTFY_TOKEN: ${NTFY_TOKEN:-}
       PUBLIC_URL: ${RADAR_PUBLIC_URL:-http://localhost:8280}
       RADAR_INTERVAL: ${RADAR_INTERVAL:-120}   # seconden tussen radar-rondes
+      FEED_MAX_AGE_HOURS: ${FEED_MAX_AGE_HOURS:-48}   # ouder verdwijnt uit de feed
+      RETENTION_DAYS: ${RETENTION_DAYS:-30}           # daarna opruimen
+      WEATHER_PLACE: ${WEATHER_PLACE:-Ede}
+      WEATHER_LAT: ${WEATHER_LAT:-52.04}
+      WEATHER_LON: ${WEATHER_LON:-5.67}
       TZ: Europe/Amsterdam
     volumes:
       - radar-data:/data
