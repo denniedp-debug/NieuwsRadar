@@ -24,6 +24,20 @@ wire_services:
   AFP: ['\(AFP\)', '\bAFP\b']
   dpa: ['\(dpa\)']
 
+# Verbergen wat je niet interesseert.
+# - keywords: verhalen met deze woorden worden verborgen (hele woorden, hoofdletters maken niet uit)
+# - similarity: hoe sterk een nieuw verhaal moet lijken op iets wat je met "Niet interessant" verborg
+#   (lager = strenger filteren, hoger = alleen bijna-dezelfde onderwerpen)
+# Verborgen verhalen kun je terugvinden en terugzetten via Menu › Filters.
+filters:
+  similarity: 0.72
+  keywords:
+    - showbizz
+    - realityster
+    - influencer
+    - acteur
+    - actrice
+
 watchlist:
   - PHP
   - Microsoft 365

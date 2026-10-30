@@ -222,7 +222,7 @@ def translate_backlog(limit: int):
         return
     since = iso(now() - timedelta(hours=48))
     rows = db.con().execute(
-        "SELECT * FROM clusters WHERE updated_at >= ? AND (translated_title IS NULL OR translated_title != title) "
+        "SELECT * FROM clusters WHERE updated_at >= ? AND COALESCE(hidden, 0) = 0 AND (translated_title IS NULL OR translated_title != title) "
         "ORDER BY updated_at DESC LIMIT ?", (since, limit),
     ).fetchall()
     for r in rows:
@@ -230,11 +230,39 @@ def translate_backlog(limit: int):
         db.con().commit()
 
 
+def apply_filters(c: dict, cfg: dict) -> dict:
+    """Verberg verhalen die je niet interesseren: trefwoorden uit config.yaml of lijkend op wat je eerder verborg."""
+    if c.get("hide_manual"):  # 1 = zelf verborgen, -1 = zelf teruggezet: niet automatisch aanpassen
+        return c
+    f = cfg.get("filters") or {}
+    reason = None
+    rows = db.con().execute("SELECT title, text FROM entries WHERE cluster_id=?", (c["id"],)).fetchall()
+    text = " ".join(f"{r['title']} {r['text'][:300]}" for r in rows) + " " + (c.get("title_nl") or "")
+    hits = watch_hits(text, f.get("keywords") or [])
+    if hits:
+        reason = "trefwoord: " + ", ".join(hits)
+    else:
+        negs = db.con().execute("SELECT title, vec FROM negatives").fetchall()
+        if negs:
+            cvec = db.blob_to_vec(c["centroid"])
+            best = max(((float(np.dot(cvec, db.blob_to_vec(n["vec"]))), n["title"]) for n in negs), key=lambda x: x[0])
+            if best[0] >= float(f.get("similarity", 0.72)):
+                reason = f"lijkt op “{best[1][:60]}”"
+    hidden = 1 if reason else 0
+    if hidden != (c.get("hidden") or 0):
+        db.con().execute("UPDATE clusters SET hidden=?, hide_reason=? WHERE id=?", (hidden, reason, c["id"]))
+    return {**c, "hidden": hidden, "hide_reason": reason}
+
+
 def _finish_clusters(cids, cfg, budget):
     """Bronnen tellen, status bepalen, (optioneel) samenvatten/vertalen en pushregels toepassen."""
     con = db.con()
     for cid in cids:
         c = refresh_cluster(cid, cfg)
+        c = apply_filters(c, cfg)
+        if c.get("hidden"):
+            con.commit()
+            continue  # verborgen: niet samenvatten, vertalen of pushen
         maybe_summarize(c)
         if budget[0] > 0 and c.get("translated_title") != c["title"]:
             c = maybe_translate(c)

@@ -46,9 +46,12 @@ def connect():
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)
     cols = [r[1] for r in con.execute("PRAGMA table_info(clusters)")]
-    for col in ("title_nl", "teaser_nl", "lang", "translated_title"):
+    for col, typ in (("title_nl", "TEXT"), ("teaser_nl", "TEXT"), ("lang", "TEXT"), ("translated_title", "TEXT"),
+                     ("hidden", "INTEGER DEFAULT 0"), ("hide_reason", "TEXT"), ("hide_manual", "INTEGER DEFAULT 0")):
         if col not in cols:  # migratie van oudere databases
-            con.execute(f"ALTER TABLE clusters ADD COLUMN {col} TEXT")
+            con.execute(f"ALTER TABLE clusters ADD COLUMN {col} {typ}")
+    con.execute("""CREATE TABLE IF NOT EXISTS negatives (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, cluster_id INTEGER UNIQUE, title TEXT, vec BLOB, at TEXT)""")
     con.commit()
     return con
 

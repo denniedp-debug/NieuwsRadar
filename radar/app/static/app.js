@@ -48,6 +48,10 @@
     const chips = TABS.map(([id, label]) =>
       `<button class="chip" data-tab="${id}" aria-pressed="${state.tab === id}">${state.tab === id ? check : ''}${label}</button>`).join('');
     const cards = items.map((c, i) => `
+      <article class="card-wrap" data-card="${c.id}">
+      <button class="hide-btn" data-hide="${c.id}" aria-label="Niet interessant: ${esc(c.title)}" title="Niet interessant">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.9 17.9A10 10 0 0 1 12 20c-7 0-10-8-10-8a18 18 0 0 1 5.1-5.9M9.9 4.2A9 9 0 0 1 12 4c7 0 10 8 10 8a18 18 0 0 1-2.2 3.2M14.1 14.1a3 3 0 1 1-4.2-4.2M2 2l20 20"/></svg>
+      </button>
       <a class="card" href="#/c/${c.id}">
         ${hero(c, 'hero' + (i === 0 ? ' big' : ''))}
           <span class="lead"><span class="dot">${esc((c.lead || '?')[0])}</span>${esc(c.lead)}</span>
@@ -57,9 +61,10 @@
           ${c.teaser ? `<div class="teaser">${esc(c.teaser)}</div>` : ''}
           <div class="meta">${badge(c)}<span>${esc(c.categoryLabel)} · ${esc(ago(c.updatedAt))}${c.originalTitle ? ' · vertaald' : ''}</span></div>
         </div>
-      </a>`).join('');
+      </a></article>`).join('');
     app.innerHTML = `
       <section class="feed single">
+        <div id="undo"></div>
         ${snack}
         <nav class="chips" aria-label="Rubriek">${chips}</nav>
         <h2 class="section-h">${state.q ? 'Zoekresultaten voor “' + esc(state.q) + '”' : 'Voor jou · ' + new Date().toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' })}</h2>
@@ -91,6 +96,27 @@
       ${w.text ? `<pre class="watch-text">${esc(w.text)}</pre>` : '<p>Nog niet opgehaald.</p>'}</div>`).join('')
       + '<button class="tonal" id="testWatch">Stuur testmelding</button>'
       : '<div class="panel"><p>Nog geen paginawachters. Voeg ze toe onder <b>watchers</b> in config.yaml.</p></div>'));
+  }
+
+  async function renderFilters() {
+    const [f, hidden] = await Promise.all([api('/api/filters'), api('/api/clusters?cat=hidden&limit=50')]);
+    app.innerHTML = page('Filters', `
+      <div class="panel"><h3>Zo werkt het</h3>
+        <p>Tik op het oog-icoon op een verhaal (of <b>Niet interessant</b> op de artikelpagina). Dat verhaal verdwijnt, en nieuwe verhalen die er sterk op lijken worden voortaan ook verborgen.</p></div>
+      <div class="panel"><h3>Geleerd van jou (${f.learned.length})</h3>
+        ${f.learned.length ? '<ul class="srcs">' + f.learned.map((n) => `<li><span style="display:flex;align-items:center;gap:12px;min-height:52px">
+          <span style="flex:1;min-width:0">${esc(n.title)}</span>
+          <button class="chip" data-forget="${n.id}">Vergeten</button></span></li>`).join('') + '</ul>' : '<p>Nog niets. Verberg een paar verhalen die je niet interesseren.</p>'}</div>
+      <div class="panel"><h3>Trefwoorden</h3><p>Aanpassen onder <b>filters › keywords</b> in config.yaml.</p>
+        <div class="tags">${f.keywords.map((k) => `<span class="tag">${esc(k)}</span>`).join('') || '<span class="tag">geen</span>'}</div></div>
+      <div class="panel"><h3>Verborgen verhalen (${f.hiddenCount})</h3>
+        ${hidden.length ? '<ul class="srcs">' + hidden.map((c) => `<li><span style="display:flex;align-items:center;gap:12px;min-height:52px">
+          <a href="#/c/${c.id}" style="flex:1;min-width:0;color:var(--on)">${esc(c.title)}</a>
+          <button class="chip" data-unhide="${c.id}">Terugzetten</button></span></li>`).join('') + '</ul>' : '<p>Niets verborgen.</p>'}</div>`);
+  }
+
+  async function setHidden(id, hidden) {
+    await api(`/api/clusters/${id}/hide`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hidden }) });
   }
 
   function renderWeergave() {
@@ -211,6 +237,8 @@
         <div class="layout" style="padding:0">
           <article class="article">
             <div class="meta">${badge(c, true)}</div>
+            <div><button class="chip" data-detail-hide="${c.id}" data-state="${c.hidden ? 'hidden' : 'shown'}">${c.hidden ? 'Terugzetten in de feed' : 'Niet interessant'}</button>
+              ${c.hidden && c.hideReason ? `<small style="color:var(--on-var);margin-left:8px">Verborgen: ${esc(c.hideReason)}</small>` : ''}</div>
             ${c.originalTitle ? `<p class="translated">Automatisch vertaald uit het Engels · origineel: “${esc(c.originalTitle)}”</p>` : ''}
             ${c.summary ? `<p class="lede">${esc(c.summary)}</p>` : `<p class="lede">${esc(c.teaser)}</p>`}
             ${facts ? `<div class="box"><h2>Wat de bronnen bevestigen</h2><ul class="facts">${facts}</ul></div>` : ''}
@@ -224,7 +252,7 @@
   }
 
   // ---------- Router & events ----------
-  const PAGES = { '#/meldingen': renderMeldingen, '#/wachters': renderWachters, '#/weergave': renderWeergave, '#/uitleg': renderUitleg };
+  const PAGES = { '#/filters': renderFilters, '#/meldingen': renderMeldingen, '#/wachters': renderWachters, '#/weergave': renderWeergave, '#/uitleg': renderUitleg };
   const isFeed = () => location.hash === '' || location.hash === '#/' || location.hash === '#';
   async function route() {
     const m = location.hash.match(/^#\/c\/(\d+)/);
@@ -239,6 +267,22 @@
   window.addEventListener('hashchange', route);
 
   app.addEventListener('click', (e) => {
+    const h = e.target.closest('[data-hide],[data-undo],[data-detail-hide],[data-unhide],[data-forget]');
+    if (h) {
+      e.preventDefault();
+      if (h.dataset.hide) {
+        const id = h.dataset.hide;
+        setHidden(id, true).then(() => {
+          document.querySelector(`[data-card="${id}"]`)?.remove();
+          const u = document.getElementById('undo');
+          if (u) u.innerHTML = `<div class="snack" role="status"><div class="t"><b>Verborgen</b><span>Vergelijkbare verhalen worden voortaan ook verborgen.</span></div><button data-undo="${id}">Ongedaan maken</button></div>`;
+        }).catch(() => {});
+      } else if (h.dataset.undo) setHidden(h.dataset.undo, false).then(renderFeed);
+      else if (h.dataset.detailHide) setHidden(h.dataset.detailHide, h.dataset.state !== 'hidden').then(() => (h.dataset.state === 'hidden' ? renderDetail(h.dataset.detailHide) : (location.hash = '#/')));
+      else if (h.dataset.unhide) setHidden(h.dataset.unhide, false).then(renderFilters);
+      else if (h.dataset.forget) api('/api/filters/learned/' + h.dataset.forget, { method: 'DELETE' }).then(renderFilters);
+      return;
+    }
     const t = e.target.closest('[data-tab],[data-dismiss],#more,#testWatch,#pushOn,#pushOff,#pushTest');
     if (!t) return;
     if (t.id === 'pushOn' || t.id === 'pushOff' || t.id === 'pushTest') {

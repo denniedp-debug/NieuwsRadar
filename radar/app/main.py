@@ -90,6 +90,8 @@ def _card(c, with_sources=False):
             "maxCvss": c["max_cvss"],
             "watchHits": json.loads(c["watch_hits"] or "[]"),
             "sources": src,
+            "hidden": bool(c.get("hidden")),
+            "hideReason": c.get("hide_reason"),
         })
     return out
 
@@ -98,9 +100,12 @@ def _card(c, with_sources=False):
 def list_clusters(cat: str = "all", q: str = "", limit: int = 60):
     sql = "SELECT * FROM clusters WHERE 1=1"
     args = []
-    if cat == "ok":
+    sql += " AND COALESCE(hidden, 0) = 1" if cat == "hidden" else " AND COALESCE(hidden, 0) = 0"
+    if cat in ("all", "hidden"):
+        pass
+    elif cat == "ok":
         sql += " AND status != 'waiting'"
-    elif cat != "all":
+    else:
         sql += " AND category=?"
         args.append(cat)
     if q:
@@ -118,6 +123,52 @@ def get_cluster(cid: int):
     if not r:
         raise HTTPException(404)
     return _card(dict(r), with_sources=True)
+
+
+class HideBody(BaseModel):
+    hidden: bool
+
+
+@app.post("/api/clusters/{cid}/hide")
+def hide_cluster(cid: int, body: HideBody):
+    """Niet interessant (leert ervan) of terugzetten."""
+    con = db.con()
+    r = con.execute("SELECT id, title, title_nl, centroid FROM clusters WHERE id=?", (cid,)).fetchone()
+    if not r:
+        raise HTTPException(404)
+    with db._lock:
+        if body.hidden:
+            con.execute("UPDATE clusters SET hidden=1, hide_manual=1, hide_reason='zelf verborgen' WHERE id=?", (cid,))
+            con.execute("INSERT OR IGNORE INTO negatives(cluster_id, title, vec, at) VALUES(?,?,?,datetime('now'))",
+                        (cid, r["title_nl"] or r["title"], r["centroid"]))
+        else:
+            con.execute("UPDATE clusters SET hidden=0, hide_manual=-1, hide_reason=NULL WHERE id=?", (cid,))
+            con.execute("DELETE FROM negatives WHERE cluster_id=?", (cid,))
+        con.commit()
+    return {"ok": True}
+
+
+@app.get("/api/filters")
+def get_filters():
+    f = settings.load().get("filters") or {}
+    negs = db.con().execute("SELECT id, cluster_id, title, at FROM negatives ORDER BY at DESC").fetchall()
+    hidden = db.con().execute("SELECT COUNT(*) FROM clusters WHERE hidden=1").fetchone()[0]
+    return {"keywords": f.get("keywords") or [], "similarity": f.get("similarity", 0.72),
+            "learned": [dict(n) for n in negs], "hiddenCount": hidden}
+
+
+@app.delete("/api/filters/learned/{nid}")
+def forget_learned(nid: int):
+    con = db.con()
+    with db._lock:
+        row = con.execute("SELECT cluster_id FROM negatives WHERE id=?", (nid,)).fetchone()
+        con.execute("DELETE FROM negatives WHERE id=?", (nid,))
+        # verhalen die alleen hierdoor verborgen waren, komen bij de volgende ronde vanzelf terug
+        con.execute("UPDATE clusters SET hidden=0, hide_reason=NULL WHERE hide_manual=0 AND hidden=1 AND hide_reason LIKE 'lijkt op%'")
+        if row:
+            con.execute("UPDATE clusters SET hidden=0, hide_manual=0, hide_reason=NULL WHERE id=?", (row["cluster_id"],))
+        con.commit()
+    return {"ok": True}
 
 
 @app.get("/api/alerts")
