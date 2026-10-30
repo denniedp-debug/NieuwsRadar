@@ -120,6 +120,9 @@ services:
       WEATHER_PLACE: ${WEATHER_PLACE:-Ede}
       WEATHER_LAT: ${WEATHER_LAT:-52.04}
       WEATHER_LON: ${WEATHER_LON:-5.67}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}            # leeg = geen toegangsbeveiliging
+      MORNING_TIME: ${MORNING_TIME:-07:00}           # leeg = geen ochtendoverzicht
+      MORNING_COUNT: ${MORNING_COUNT:-5}
       TZ: Europe/Amsterdam
     volumes:
       - radar-data:/data

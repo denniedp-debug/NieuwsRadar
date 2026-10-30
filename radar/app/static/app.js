@@ -3,7 +3,7 @@
   const TABS = [['all', 'Alles'], ['ok', 'Bevestigd'], ['it', 'IT-security'], ['il', 'Israël'], ['nl', 'Nederland'], ['kerk', 'Kerk'], ['tech', 'Tech'], ['world', 'Wereld']];
   const state = { tab: localGet('tab') || 'all', q: '', limit: 30 };
   // eigen id per apparaat: zo heeft ieder toestel een eigen 'gelezen'-lijst
-  const DEVICE = localGet('device') || (() => {
+  let DEVICE = localGet('device') || (() => {
     const id = (self.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2);
     localSet('device', id); return id;
   })();
@@ -38,9 +38,50 @@
   }
 
   async function api(path, opts) {
-    const r = await fetch(path, opts);
-    if (!r.ok) throw new Error(r.status);
+    const r = await fetch(path, { credentials: 'same-origin', ...opts });
+    if (r.status === 401 && !path.startsWith('/api/admin')) { renderPair(); throw new Error('niet gekoppeld'); }
+    if (!r.ok) {
+      let msg = r.status;
+      try { msg = (await r.json()).detail || msg; } catch {}
+      throw new Error(msg);
+    }
     return r.json();
+  }
+
+  // ---------- Koppelen ----------
+  function renderPair(msg) {
+    const guess = /iPhone/.test(navigator.userAgent) ? 'iPhone' : /iPad/.test(navigator.userAgent) ? 'iPad'
+      : /Android/.test(navigator.userAgent) ? 'Android-telefoon' : /Windows/.test(navigator.userAgent) ? 'Windows-pc' : /Mac/.test(navigator.userAgent) ? 'Mac' : 'Toestel';
+    app.innerHTML = page('Toestel koppelen', `
+      <div class="panel">
+        <p>Dit toestel is nog niet gekoppeld. Vraag een koppelcode aan de beheerder (te maken op <b>/admin</b>) en vul die hieronder in.</p>
+        <form id="pairForm" class="pair-form">
+          <label for="pairCode">Koppelcode</label>
+          <input id="pairCode" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="123456" required>
+          <label for="pairName">Naam van dit toestel</label>
+          <input id="pairName" maxlength="60" value="${esc(guess)}">
+          <button class="tonal" type="submit">Koppelen</button>
+          ${msg ? `<p class="error" role="alert">${esc(msg)}</p>` : ''}
+        </form>
+      </div>`);
+    document.getElementById('pairForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        await api('/api/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: document.getElementById('pairCode').value, name: document.getElementById('pairName').value, legacyId: DEVICE }) });
+        await boot();
+      } catch (err) { renderPair(err.message === 'niet gekoppeld' ? 'Code onbekend of verlopen.' : err.message); }
+    });
+  }
+
+  async function boot() {
+    try {
+      const me = await api('/api/me');
+      if (!me.paired) return renderPair();
+      if (me.device) { DEVICE = me.device.id; localSet('device', DEVICE); }
+    } catch { /* offline: met cache verder */ }
+    loadWeather();
+    route();
   }
 
   // ---------- Feed ----------
@@ -221,11 +262,13 @@
       prefsHtml = '<p style="margin-top:6px">Wat wil je op dit apparaat ontvangen?</p>'
         + row('news', 'Nieuws', 'Volgens de pushregels hieronder', p.news)
         + row('security', 'IT-beveiliging', 'Kritieke lekken, NCSC en CISA', p.security)
+        + row('morning', 'Ochtendoverzicht', 'Elke ochtend de best bevestigde verhalen van de nacht', p.morning)
         + r.watchers.map((w) => row('watch:' + w, w, 'Paginawachter', p.watchers === 'all' || p.watchers.includes(w))).join('');
     }
     el.innerHTML = h + (sub
       ? `${prefsHtml}
          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px"><button class="tonal" id="pushTest">Testmelding</button>
+         <button class="chip" id="morningTest">Ochtendoverzicht nu</button>
          <button class="chip" id="pushOff">Uitzetten</button></div>`
       : `<p>Uit. Zet meldingen aan om kritieke lekken en wijzigingen meteen te zien.</p>
          <button class="tonal" id="pushOn">Meldingen aanzetten</button>`) + (msg ? `<p style="margin:10px 0 0">${esc(msg)}</p>` : '');
@@ -261,7 +304,7 @@
     const boxes = [...document.querySelectorAll('[data-pref]')];
     const val = (k) => boxes.find((b) => b.dataset.pref === k)?.checked ?? true;
     const w = boxes.filter((b) => b.dataset.pref.startsWith('watch:'));
-    const prefs = { news: val('news'), security: val('security'),
+    const prefs = { news: val('news'), security: val('security'), morning: val('morning'),
       watchers: w.every((b) => b.checked) ? 'all' : w.filter((b) => b.checked).map((b) => b.dataset.pref.slice(6)) };
     await api('/api/push/prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ endpoint: sub.endpoint, prefs }) });
   }
@@ -371,8 +414,13 @@
     }
     const src = e.target.closest('[data-src]');
     if (src) { loadArticle(src.dataset.src); return; }
-    const t = e.target.closest('[data-tab],#more,#testWatch,#pushOn,#pushOff,#pushTest');
+    const t = e.target.closest('[data-tab],#more,#testWatch,#pushOn,#pushOff,#pushTest,#morningTest');
     if (!t) return;
+    if (t.id === 'morningTest') {
+      t.disabled = true;
+      api('/api/push/morning-test', { method: 'POST' }).then((r) => updatePushPanel(r.stories ? `Ochtendoverzicht met ${r.stories} verhalen verstuurd.` : 'Nog geen bevestigde verhalen van de afgelopen 12 uur.')).catch((err) => updatePushPanel('Mislukt: ' + err.message));
+      return;
+    }
     if (t.id === 'pushOn' || t.id === 'pushOff' || t.id === 'pushTest') {
       t.disabled = true;
       ({ pushOn, pushOff, pushTest })[t.id]().catch((err) => updatePushPanel('Mislukt: ' + err.message));
@@ -472,7 +520,6 @@
 
   applyFontSize();
   applyTheme();
-  loadWeather();
   setInterval(loadWeather, 15 * 60000);
-  route();
+  boot();
 })();

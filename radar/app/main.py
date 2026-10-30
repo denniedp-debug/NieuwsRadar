@@ -5,12 +5,12 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import db, pipeline, security, settings, watchers
+from . import auth, db, pipeline, security, settings, watchers
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("radar")
@@ -37,6 +37,42 @@ def cleanup():
         log.info("opgeruimd: %d oude verhalen", len(old))
 
 
+def morning_digest(force: bool = False) -> int:
+    """Eén melding per ochtend met de best bevestigde verhalen van de afgelopen 12 uur."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    from . import push
+    if not settings.MORNING_TIME and not force:
+        return 0
+    local = datetime.now(ZoneInfo("Europe/Amsterdam"))
+    today = local.date().isoformat()
+    if not force:
+        try:
+            hh, mm = (int(x) for x in settings.MORNING_TIME.split(":"))
+        except ValueError:
+            return 0
+        if (local.hour, local.minute) < (hh, mm) or db.get_state("morning_sent") == today:
+            return 0
+        if (local.hour * 60 + local.minute) - (hh * 60 + mm) > 180:  # server lag uit: niet om 14:00 nog sturen
+            db.set_state("morning_sent", today)
+            return 0
+    since = pipeline.iso(pipeline.now() - timedelta(hours=12))
+    if force:
+        today = None  # test: niet als "verstuurd" markeren
+    rows = db.con().execute(
+        "SELECT * FROM clusters WHERE updated_at >= ? AND status != 'waiting' AND COALESCE(hidden,0)=0 "
+        "ORDER BY critical DESC, n_sources DESC, updated_at DESC LIMIT ?", (since, settings.MORNING_COUNT)).fetchall()
+    if today:
+        db.set_state("morning_sent", today)
+    if not rows:
+        return 0
+    lines = [f"• {(r['title_nl'] or r['title'])[:110]} ({r['n_sources']} bronnen)" for r in rows]
+    push.send(f"Goedemorgen · {len(rows)} bevestigde verhalen", "\n".join(lines),
+              click=f"{settings.PUBLIC_URL}/", priority=3, tags=["sunrise"], topic="morning")
+    log.info("ochtendoverzicht verstuurd (%d verhalen)", len(rows))
+    return len(rows)
+
+
 def worker():
     last_news = last_security = last_cleanup = 0.0
     while True:
@@ -50,6 +86,10 @@ def worker():
         if time.time() - last_security >= 900:  # elk kwartier
             security.run_once(settings.load())
             last_security = time.time()
+        try:
+            morning_digest()
+        except Exception as e:
+            log.warning("ochtendoverzicht mislukt: %s", e)
         if time.time() - last_cleanup >= 6 * 3600:
             try:
                 cleanup()
@@ -71,6 +111,124 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Nieuwsradar", lifespan=lifespan)
+
+PUBLIC_API = {"/api/me", "/api/pair", "/api/admin/login", "/api/admin/me"}
+
+
+@app.middleware("http")
+async def guard(request: Request, call_next):
+    """Alleen gekoppelde apparaten mogen de API gebruiken; /api/admin/* alleen de beheerder."""
+    path = request.url.path
+    if auth.ENABLED and path.startswith("/api/") and path not in PUBLIC_API:
+        if path.startswith("/api/admin/"):
+            if not auth.is_admin(request.cookies.get(auth.ADMIN_COOKIE)):
+                return JSONResponse({"detail": "beheerder niet ingelogd"}, status_code=401)
+        else:
+            dev = auth.device_for_token(request.cookies.get(auth.DEVICE_COOKIE))
+            if not dev:
+                return JSONResponse({"detail": "toestel niet gekoppeld"}, status_code=401)
+            request.state.device = dev
+    return await call_next(request)
+
+
+def _device_id(request: Request, fallback: str = "") -> str:
+    dev = getattr(request.state, "device", None)
+    return dev["id"] if dev else fallback
+
+
+def _cookie(response: Response, request: Request, name: str, value: str, max_age: int):
+    response.set_cookie(name, value, max_age=max_age, httponly=True, samesite="lax",
+                        secure=request.url.scheme == "https", path="/")
+
+
+def _ip(request: Request) -> str:
+    return (request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+            or (request.client.host if request.client else "?"))
+
+
+@app.get("/api/me")
+def me(request: Request):
+    dev = auth.device_for_token(request.cookies.get(auth.DEVICE_COOKIE)) if auth.ENABLED else None
+    return {"authEnabled": auth.ENABLED, "paired": (not auth.ENABLED) or bool(dev),
+            "device": {"id": dev["id"], "name": dev["name"]} if dev else None}
+
+
+class PairBody(BaseModel):
+    code: str
+    name: str = ""
+    legacyId: str = ""
+
+
+@app.post("/api/pair")
+def pair(body: PairBody, request: Request, response: Response):
+    ip = _ip(request)
+    if auth.rate_limited(ip):
+        raise HTTPException(429, "Te veel pogingen. Probeer het over een kwartier opnieuw.")
+    token = auth.pair(body.code, body.name, body.legacyId, request.headers.get("user-agent", ""))
+    if not token:
+        auth.failed(ip)
+        raise HTTPException(400, "Code onbekend of verlopen.")
+    _cookie(response, request, auth.DEVICE_COOKIE, token, 400 * 86400)
+    return {"ok": True}
+
+
+class LoginBody(BaseModel):
+    password: str
+
+
+@app.post("/api/admin/login")
+def admin_login(body: LoginBody, request: Request, response: Response):
+    ip = _ip(request)
+    if auth.rate_limited(ip, limit=5):
+        raise HTTPException(429, "Te veel pogingen. Probeer het over een kwartier opnieuw.")
+    token = auth.admin_login(body.password)
+    if not token:
+        auth.failed(ip)
+        raise HTTPException(401, "Onjuist wachtwoord." if auth.ENABLED else "ADMIN_PASSWORD is niet ingesteld.")
+    _cookie(response, request, auth.ADMIN_COOKIE, token, auth.ADMIN_HOURS * 3600)
+    return {"ok": True}
+
+
+@app.get("/api/admin/me")
+def admin_me(request: Request):
+    return {"enabled": auth.ENABLED, "admin": auth.is_admin(request.cookies.get(auth.ADMIN_COOKIE))}
+
+
+@app.post("/api/admin/logout")
+def admin_logout(request: Request, response: Response):
+    auth.admin_logout(request.cookies.get(auth.ADMIN_COOKIE))
+    response.delete_cookie(auth.ADMIN_COOKIE, path="/")
+    return {"ok": True}
+
+
+@app.get("/api/admin/devices")
+def admin_devices():
+    return auth.list_devices()
+
+
+class CodeBody(BaseModel):
+    name: str = ""
+
+
+@app.post("/api/admin/codes")
+def admin_code(body: CodeBody):
+    return {"code": auth.create_code(body.name), "minutes": auth.CODE_MINUTES}
+
+
+class RenameBody(BaseModel):
+    name: str
+
+
+@app.patch("/api/admin/devices/{dev_id}")
+def admin_rename(dev_id: str, body: RenameBody):
+    auth.rename_device(dev_id, body.name)
+    return {"ok": True}
+
+
+@app.delete("/api/admin/devices/{dev_id}")
+def admin_revoke(dev_id: str):
+    auth.revoke_device(dev_id)
+    return {"ok": True}
 
 CAT_LABELS = {"it": "IT-security", "tech": "Tech", "nl": "Nederland", "kerk": "Kerk", "il": "Israël", "world": "Wereld"}
 
@@ -124,8 +282,9 @@ def _card(c, with_sources=False):
 
 
 @app.get("/api/clusters")
-def list_clusters(cat: str = "all", q: str = "", limit: int = 60, device: str = "", view: str = "feed"):
+def list_clusters(request: Request, cat: str = "all", q: str = "", limit: int = 60, device: str = "", view: str = "feed"):
     """view=feed: ongelezen en recent · view=archive: door dit apparaat gelezen · zoeken: alles."""
+    device = _device_id(request, device)
     from datetime import timedelta
     sql = "SELECT * FROM clusters WHERE 1=1"
     args = []
@@ -166,8 +325,9 @@ class ReadBody(BaseModel):
 
 
 @app.post("/api/read")
-def mark_read(body: ReadBody):
+def mark_read(body: ReadBody, request: Request):
     """Gelezen/gearchiveerd per apparaat (zo heeft ieder toestel een eigen lijst)."""
+    body.device = _device_id(request, body.device)
     if not body.device or len(body.device) > 64:
         raise HTTPException(400)
     con = db.con()
@@ -373,10 +533,10 @@ def push_key():
 
 
 @app.post("/api/push/subscribe")
-def push_subscribe(body: Subscription):
+def push_subscribe(body: Subscription, request: Request):
     from . import webpush
     try:
-        webpush.subscribe(body.subscription, body.label)
+        webpush.subscribe(body.subscription, body.label, _device_id(request) or None)
     except ValueError as e:
         raise HTTPException(400, str(e))
     return {"ok": True, "devices": webpush.count()}
@@ -406,6 +566,12 @@ def push_prefs(body: Prefs):
     return {"prefs": cur, "watchers": [w["name"] for w in settings.load().get("watchers") or []]}
 
 
+@app.post("/api/push/morning-test")
+def push_morning_test():
+    """Ochtendoverzicht nu versturen (om te testen)."""
+    return {"stories": morning_digest(force=True)}
+
+
 @app.post("/api/push/test")
 def push_test(body: Endpoint):
     from . import webpush
@@ -416,6 +582,11 @@ def push_test(body: Endpoint):
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+@app.get("/admin")
+def admin_page():
+    return FileResponse(STATIC / "admin.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/")

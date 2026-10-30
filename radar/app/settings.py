@@ -21,6 +21,8 @@ NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "nieuwsradar")
 NTFY_TOKEN = os.environ.get("NTFY_TOKEN", "")
 PUBLIC_URL = os.environ.get("PUBLIC_URL", "http://localhost:8080").rstrip("/")
 INTERVAL_SECONDS = int(os.environ.get("RADAR_INTERVAL", "300"))
+MORNING_TIME = os.environ.get("MORNING_TIME", "07:00").strip()  # leeg = geen ochtendoverzicht
+MORNING_COUNT = int(os.environ.get("MORNING_COUNT", "5"))
 FEED_MAX_AGE_HOURS = int(os.environ.get("FEED_MAX_AGE_HOURS", "48"))  # ouder verdwijnt uit de feed (blijft zoekbaar)
 RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS", "30"))          # daarna echt opruimen
 WEATHER_LAT = os.environ.get("WEATHER_LAT", "52.04")

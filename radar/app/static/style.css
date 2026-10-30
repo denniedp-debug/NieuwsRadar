@@ -206,3 +206,15 @@ button { font: inherit; }
 .w-temp { font-size: 1.375rem; font-weight: 700; color: var(--on); }
 .w-sub { font-size: .8125rem; color: var(--on-var); font-weight: 500; white-space: nowrap; }
 @media (max-width: 360px) { .w-sub { display: none; } }
+
+/* ---------- Koppelen / beheer ---------- */
+.pair-form { display: flex; flex-direction: column; gap: 8px; max-width: 360px; }
+.pair-form label, .adm label { font-size: .875rem; font-weight: 600; margin-top: 6px; }
+.pair-form input, .adm input { min-height: 48px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--outline); background: var(--surface); color: var(--on); font: inherit; font-size: max(16px, 1rem); }
+#pairCode { letter-spacing: .3em; font-size: 1.5rem; font-weight: 700; }
+.pair-form .tonal { margin-top: 10px; align-self: flex-start; }
+.error { color: var(--on-crit); background: var(--crit); padding: 10px 14px; border-radius: 12px; margin: 8px 0 0; font-size: .875rem; }
+.code-show { margin-top: 14px; display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.code-show .code { font-size: 2.5rem; font-weight: 800; letter-spacing: .12em; font-variant-numeric: tabular-nums; color: var(--on); }
+.code-show small { color: var(--on-var); }
+.srcs small { display: block; color: var(--on-var); font-size: .8125rem; }

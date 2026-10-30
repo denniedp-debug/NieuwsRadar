@@ -18,16 +18,21 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   endpoint TEXT PRIMARY KEY, data TEXT, label TEXT, created_at TEXT
 );
 """)
-if "prefs" not in [r[1] for r in db.con().execute("PRAGMA table_info(subscriptions)")]:
-    db.con().execute("ALTER TABLE subscriptions ADD COLUMN prefs TEXT")
-    db.con().commit()
+_cols = [r[1] for r in db.con().execute("PRAGMA table_info(subscriptions)")]
+for _c in ("prefs", "device"):
+    if _c not in _cols:
+        db.con().execute(f"ALTER TABLE subscriptions ADD COLUMN {_c} TEXT")
+db.con().commit()
 
 # Standaard: alles aan. "watchers": "all" of een lijst met namen van paginawachters.
 DEFAULT_PREFS = {"news": True, "security": True, "watchers": "all"}
+# "morning" (ochtendoverzicht) volgt standaard de keuze voor "news"
 
 
 def wants(prefs: dict | None, topic: str | None) -> bool:
     p = {**DEFAULT_PREFS, **(prefs or {})}
+    if topic == "morning":
+        return bool(p.get("morning", p.get("news", True)))
     if not topic:
         return True
     if topic.startswith("watch:"):
@@ -40,11 +45,14 @@ def get_prefs(endpoint: str) -> dict | None:
     r = db.con().execute("SELECT prefs FROM subscriptions WHERE endpoint=?", (endpoint,)).fetchone()
     if not r:
         return None
-    return {**DEFAULT_PREFS, **json.loads(r["prefs"] or "{}")}
+    p = {**DEFAULT_PREFS, **json.loads(r["prefs"] or "{}")}
+    p.setdefault("morning", p.get("news", True))
+    return p
 
 
 def set_prefs(endpoint: str, prefs: dict):
-    clean = {"news": bool(prefs.get("news", True)), "security": bool(prefs.get("security", True))}
+    clean = {"news": bool(prefs.get("news", True)), "security": bool(prefs.get("security", True)),
+             "morning": bool(prefs.get("morning", prefs.get("news", True)))}
     w = prefs.get("watchers", "all")
     clean["watchers"] = "all" if w == "all" else [str(x) for x in (w or [])][:50]
     db.con().execute("UPDATE subscriptions SET prefs=? WHERE endpoint=?", (json.dumps(clean), endpoint))
@@ -73,13 +81,13 @@ def public_key() -> str:
     return _keys()["public"]
 
 
-def subscribe(sub: dict, label: str = ""):
+def subscribe(sub: dict, label: str = "", device: str | None = None):
     if not sub.get("endpoint", "").startswith("https://"):
         raise ValueError("ongeldig endpoint")
     db.con().execute(
-        "INSERT INTO subscriptions(endpoint, data, label, created_at) VALUES(?,?,?,?) "
-        "ON CONFLICT(endpoint) DO UPDATE SET data=excluded.data, label=excluded.label",
-        (sub["endpoint"], json.dumps(sub), label[:80], datetime.now(timezone.utc).isoformat(timespec="seconds")),
+        "INSERT INTO subscriptions(endpoint, data, label, created_at, device) VALUES(?,?,?,?,?) "
+        "ON CONFLICT(endpoint) DO UPDATE SET data=excluded.data, label=excluded.label, device=excluded.device",
+        (sub["endpoint"], json.dumps(sub), label[:80], datetime.now(timezone.utc).isoformat(timespec="seconds"), device),
     )
     db.con().commit()
 

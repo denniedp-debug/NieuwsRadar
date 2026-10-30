@@ -1,6 +1,6 @@
 // Service worker: app-shell offline, API network-first met cache als terugval.
-const SHELL = 'nr-shell-v7';
-const API = 'nr-api-v7';
+const SHELL = 'nr-shell-v8';
+const API = 'nr-api-v8';
 const ASSETS = ['/', '/static/style.css', '/static/app.js', '/manifest.webmanifest', '/static/icons/icon.svg', '/static/icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {
@@ -17,12 +17,12 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  if (e.request.method !== 'GET' || url.origin !== location.origin) return;
+  if (e.request.method !== 'GET' || url.origin !== location.origin || url.pathname.startsWith('/admin') || url.pathname.startsWith('/api/admin') || url.pathname === '/api/me') return;
 
   if (url.pathname.startsWith('/api/')) {
     e.respondWith(
       fetch(e.request)
-        .then((r) => { const copy = r.clone(); caches.open(API).then((c) => c.put(e.request, copy)); return r; })
+        .then((r) => { if (r.ok) { const copy = r.clone(); caches.open(API).then((c) => c.put(e.request, copy)); } return r; })
         .catch(() => caches.match(e.request))
     );
     return;
@@ -31,7 +31,7 @@ self.addEventListener('fetch', (e) => {
   // shell: cache eerst, op de achtergrond verversen
   e.respondWith(
     caches.match(e.request).then((hit) => {
-      const net = fetch(e.request).then((r) => { const copy = r.clone(); caches.open(SHELL).then((c) => c.put(e.request, copy)); return r; }).catch(() => hit);
+      const net = fetch(e.request).then((r) => { if (r.ok) { const copy = r.clone(); caches.open(SHELL).then((c) => c.put(e.request, copy)); } return r; }).catch(() => hit);
       return hit || net;
     })
   );

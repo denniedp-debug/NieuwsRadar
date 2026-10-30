@@ -43,6 +43,10 @@
     </outline>
     <outline text="Wereld" title="Wereld">
       <outline type="rss" text="BBC World" xmlUrl="https://feeds.bbci.co.uk/news/world/rss.xml" htmlUrl="https://www.bbc.com/news/world"/>
+      <outline type="rss" text="NOS Buitenland" xmlUrl="https://feeds.nos.nl/nosnieuwsbuitenland" htmlUrl="https://nos.nl/"/>
+      <outline type="rss" text="Deutsche Welle World" xmlUrl="https://rss.dw.com/rdf/rss-en-world" htmlUrl="https://www.dw.com/"/>
+      <outline type="rss" text="The Guardian World" xmlUrl="https://www.theguardian.com/world/rss" htmlUrl="https://www.theguardian.com/world"/>
+      <outline type="rss" text="France 24" xmlUrl="https://www.france24.com/en/rss" htmlUrl="https://www.france24.com/en/"/>
       <outline type="rss" text="RD.nl Buitenland" xmlUrl="https://www.rd.nl/rss-feed?slug=buitenland" htmlUrl="https://www.rd.nl/"/>
     </outline>
   </body>

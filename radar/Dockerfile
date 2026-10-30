@@ -8,4 +8,5 @@ COPY radar/app ./app
 COPY config.yaml ./config.yaml
 EXPOSE 8080
 VOLUME ["/data"]
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# --proxy-headers: achter je reverse proxy (https) worden cookies dan als "Secure" gezet
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers", "--forwarded-allow-ips", "*"]
