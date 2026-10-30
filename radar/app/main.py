@@ -171,6 +171,33 @@ def forget_learned(nid: int):
     return {"ok": True}
 
 
+@app.get("/api/entries/{eid}/text")
+def entry_text(eid: int, full: bool = True):
+    """Tekst van één artikel. Met full=true laat Miniflux de volledige pagina ophalen (eenmalig, daarna uit cache)."""
+    import httpx
+    from .text import html_to_text
+    con = db.con()
+    r = con.execute("SELECT id, text, full_text, url FROM entries WHERE id=?", (eid,)).fetchone()
+    if not r:
+        raise HTTPException(404)
+    if r["full_text"]:
+        return {"text": r["full_text"], "full": True, "url": r["url"]}
+    if full and settings.MINIFLUX_API_KEY:
+        try:
+            resp = httpx.get(f"{settings.MINIFLUX_URL}/v1/entries/{eid}/fetch-content",
+                             headers={"X-Auth-Token": settings.MINIFLUX_API_KEY}, timeout=30)
+            resp.raise_for_status()
+            text = html_to_text(resp.json().get("content", ""))
+            if len(text) > len(r["text"] or "") + 200:  # alleen bewaren als het echt meer is
+                with db._lock:
+                    con.execute("UPDATE entries SET full_text=? WHERE id=?", (text, eid))
+                    con.commit()
+                return {"text": text, "full": True, "url": r["url"]}
+        except Exception as e:
+            log.warning("volledige tekst ophalen mislukt (%s): %s", eid, e)
+    return {"text": r["text"] or "", "full": False, "url": r["url"]}
+
+
 @app.get("/api/alerts")
 def alerts(limit: int = 20):
     rows = db.con().execute("SELECT * FROM alerts ORDER BY at DESC LIMIT ?", (min(limit, 100),)).fetchall()

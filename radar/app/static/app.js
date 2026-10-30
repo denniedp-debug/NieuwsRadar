@@ -47,11 +47,24 @@
          <a href="#/c/${crit.id}">Openen</a><button data-dismiss="${crit.id}" aria-label="Melding sluiten">✕</button></div>` : '';
     const chips = TABS.map(([id, label]) =>
       `<button class="chip" data-tab="${id}" aria-pressed="${state.tab === id}">${state.tab === id ? check : ''}${label}</button>`).join('');
-    const cards = items.map((c, i) => `
+    const compact = (localGet('view') || 'compact') === 'compact';
+    const eye = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.9 17.9A10 10 0 0 1 12 20c-7 0-10-8-10-8a18 18 0 0 1 5.1-5.9M9.9 4.2A9 9 0 0 1 12 4c7 0 10 8 10 8a18 18 0 0 1-2.2 3.2M14.1 14.1a3 3 0 1 1-4.2-4.2M2 2l20 20"/></svg>';
+    const hideBtn = (c) => `<button class="hide-btn" data-hide="${c.id}" aria-label="Niet interessant: ${esc(c.title)}" title="Niet interessant">${eye}</button>`;
+    const metaLine = (c) => `${esc(c.categoryLabel)} · ${esc(ago(c.updatedAt))}${c.originalTitle ? ' · vertaald' : ''}`;
+    const cards = items.map((c, i) => compact ? `
+      <article class="card-wrap row" data-card="${c.id}">
+        <a class="row-card" href="#/c/${c.id}">
+          <div class="rc-body">
+            <div class="rc-lead">${esc(c.lead)}</div>
+            <div class="rc-title">${esc(c.title)}</div>
+            <div class="meta">${badge(c)}<span>${metaLine(c)}</span></div>
+          </div>
+          ${hero(c, 'rc-thumb')}</div>
+        </a>
+        ${hideBtn(c)}
+      </article>` : `
       <article class="card-wrap" data-card="${c.id}">
-      <button class="hide-btn" data-hide="${c.id}" aria-label="Niet interessant: ${esc(c.title)}" title="Niet interessant">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.9 17.9A10 10 0 0 1 12 20c-7 0-10-8-10-8a18 18 0 0 1 5.1-5.9M9.9 4.2A9 9 0 0 1 12 4c7 0 10 8 10 8a18 18 0 0 1-2.2 3.2M14.1 14.1a3 3 0 1 1-4.2-4.2M2 2l20 20"/></svg>
-      </button>
+      ${hideBtn(c)}
       <a class="card" href="#/c/${c.id}">
         ${hero(c, 'hero' + (i === 0 ? ' big' : ''))}
           <span class="lead"><span class="dot">${esc((c.lead || '?')[0])}</span>${esc(c.lead)}</span>
@@ -59,7 +72,7 @@
         <div class="card-body">
           <div class="card-title">${esc(c.title)}</div>
           ${c.teaser ? `<div class="teaser">${esc(c.teaser)}</div>` : ''}
-          <div class="meta">${badge(c)}<span>${esc(c.categoryLabel)} · ${esc(ago(c.updatedAt))}${c.originalTitle ? ' · vertaald' : ''}</span></div>
+          <div class="meta">${badge(c)}<span>${metaLine(c)}</span></div>
         </div>
       </a></article>`).join('');
     app.innerHTML = `
@@ -127,6 +140,10 @@
         <div class="seg" role="radiogroup" aria-label="Tekstgrootte">${opts.map(([k, l]) =>
           `<label class="seg-item"><input type="radio" name="fs" value="${k}" ${cur === k ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>
         <p style="margin-top:14px">Voorbeeld: <b>Twee kritieke lekken in PHP; noodpatches uitgebracht</b></p>
+      </div>
+      <div class="panel"><h3>Kaarten</h3><p>Compact toont meer verhalen tegelijk.</p>
+        <div class="seg two" role="radiogroup" aria-label="Kaarten">${[['compact', 'Compact'], ['large', 'Groot']].map(([k, l]) =>
+          `<label class="seg-item"><input type="radio" name="view" value="${k}" ${(localGet('view') || 'compact') === k ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>
       </div>
       <div class="panel"><h3>Thema</h3><p>Automatisch volgt de instelling van je telefoon of computer.</p>
         <div class="seg three" role="radiogroup" aria-label="Thema">${[['auto', 'Automatisch'], ['light', 'Licht'], ['dark', 'Donker']].map(([k, l]) =>
@@ -240,7 +257,15 @@
             <div><button class="chip" data-detail-hide="${c.id}" data-state="${c.hidden ? 'hidden' : 'shown'}">${c.hidden ? 'Terugzetten in de feed' : 'Niet interessant'}</button>
               ${c.hidden && c.hideReason ? `<small style="color:var(--on-var);margin-left:8px">Verborgen: ${esc(c.hideReason)}</small>` : ''}</div>
             ${c.originalTitle ? `<p class="translated">Automatisch vertaald uit het Engels · origineel: “${esc(c.originalTitle)}”</p>` : ''}
-            ${c.summary ? `<p class="lede">${esc(c.summary)}</p>` : `<p class="lede">${esc(c.teaser)}</p>`}
+            ${c.summary ? `<p class="lede">${esc(c.summary)}</p>` : ''}
+            <div class="box">
+              <div class="art-head"><h2>Artikel</h2>
+                ${c.sources.length > 1 ? `<div class="chips small" role="tablist" aria-label="Bron">${c.sources.map((s, i) =>
+                  `<button class="chip" role="tab" data-src="${s.id}" aria-pressed="${i === 0}">${esc(s.feed_title)}</button>`).join('')}</div>` : ''}
+              </div>
+              <div id="artText" class="article-text"><p class="muted">Tekst laden…</p></div>
+              <p id="artNote" class="muted"></p>
+            </div>
             ${facts ? `<div class="box"><h2>Wat de bronnen bevestigen</h2><ul class="facts">${facts}</ul></div>` : ''}
             ${disputed ? `<div class="box"><h2>Waar de bronnen verschillen</h2><ul>${disputed}</ul></div>` : ''}
             ${c.pushReason ? `<div class="why">Waarom je een melding kreeg: ${esc(c.pushReason)}.</div>` : ''}
@@ -249,6 +274,21 @@
         </div>
       </div>`;
     window.scrollTo(0, 0);
+    if (c.sources.length) loadArticle(c.sources[0].id);
+  }
+
+  async function loadArticle(eid) {
+    const box = document.getElementById('artText'), note = document.getElementById('artNote');
+    if (!box) return;
+    document.querySelectorAll('[data-src]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.src === String(eid))));
+    box.innerHTML = '<p class="muted">Volledige tekst ophalen…</p>'; note.innerHTML = '';
+    try {
+      const r = await api(`/api/entries/${eid}/text?full=true`);
+      const paras = (r.text || '').split(/\n\s*\n/).filter(Boolean);
+      box.innerHTML = paras.length ? paras.map((p) => `<p>${esc(p)}</p>`).join('') : '<p class="muted">Geen tekst beschikbaar.</p>';
+      const link = safeUrl(r.url) ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">Lees bij de bron</a>` : '';
+      note.innerHTML = r.full ? link : `Deze bron geeft alleen een inleiding. ${link}`;
+    } catch { box.innerHTML = '<p class="muted">Tekst ophalen mislukt.</p>'; }
   }
 
   // ---------- Router & events ----------
@@ -283,6 +323,8 @@
       else if (h.dataset.forget) api('/api/filters/learned/' + h.dataset.forget, { method: 'DELETE' }).then(renderFilters);
       return;
     }
+    const src = e.target.closest('[data-src]');
+    if (src) { loadArticle(src.dataset.src); return; }
     const t = e.target.closest('[data-tab],[data-dismiss],#more,#testWatch,#pushOn,#pushOff,#pushTest');
     if (!t) return;
     if (t.id === 'pushOn' || t.id === 'pushOff' || t.id === 'pushTest') {
@@ -298,6 +340,7 @@
   app.addEventListener('change', async (e) => {
     if (e.target.name === 'fs') { localSet('fs', e.target.value); applyFontSize(); return; }
     if (e.target.name === 'theme') { localSet('theme', e.target.value); applyTheme(); return; }
+    if (e.target.name === 'view') { localSet('view', e.target.value); return; }
     if (e.target.closest('[data-pref]')) return savePrefs();
     const t = e.target.closest('[data-rule]');
     if (!t) return;
@@ -329,7 +372,7 @@
 
   // ---------- Tekstgrootte ----------
   function applyFontSize() {
-    const map = { s: '13px', m: '14.4px', l: '16px', xl: '17.6px' };
+    const map = { s: '12px', m: '13px', l: '14.4px', xl: '16px' };
     document.documentElement.style.fontSize = map[localGet('fs') || 'm'] || map.m;
   }
 

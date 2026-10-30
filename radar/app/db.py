@@ -50,6 +50,9 @@ def connect():
                      ("hidden", "INTEGER DEFAULT 0"), ("hide_reason", "TEXT"), ("hide_manual", "INTEGER DEFAULT 0")):
         if col not in cols:  # migratie van oudere databases
             con.execute(f"ALTER TABLE clusters ADD COLUMN {col} {typ}")
+    ecols = [r[1] for r in con.execute("PRAGMA table_info(entries)")]
+    if "full_text" not in ecols:
+        con.execute("ALTER TABLE entries ADD COLUMN full_text TEXT")
     con.execute("""CREATE TABLE IF NOT EXISTS negatives (
       id INTEGER PRIMARY KEY AUTOINCREMENT, cluster_id INTEGER UNIQUE, title TEXT, vec BLOB, at TEXT)""")
     con.commit()

@@ -7,7 +7,7 @@ import httpx
 import numpy as np
 
 from . import ai, db, push, settings
-from .text import detect_origin, first_image, host, max_cvss, strip_html, watch_hits
+from .text import detect_origin, first_image, host, html_to_text, max_cvss, strip_html, watch_hits
 
 log = logging.getLogger("radar.pipeline")
 
@@ -50,7 +50,7 @@ def normalize(e: dict, cfg: dict) -> dict:
     feed = e.get("feed") or {}
     cat_title = ((feed.get("category") or {}).get("title")) or ""
     category = (cfg.get("categories") or {}).get(cat_title, "world")
-    text = strip_html(e.get("content", ""))
+    text = html_to_text(e.get("content", ""))
     site = host(feed.get("site_url") or e.get("url"))
     return {
         "id": e["id"],

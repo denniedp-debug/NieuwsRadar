@@ -12,6 +12,19 @@ def strip_html(s: str) -> str:
     return _WS.sub(" ", html.unescape(_TAG.sub(" ", s or ""))).strip()
 
 
+_BLOCK = re.compile(r"</?(p|div|br|h[1-6]|li|blockquote|tr|section|article|figure|figcaption)\b[^>]*>", re.I)
+_DROP = re.compile(r"<(script|style|noscript|iframe|svg)\b.*?</\1>", re.I | re.S)
+
+
+def html_to_text(s: str) -> str:
+    """Leesbare tekst met alinea's (lege regel ertussen) uit HTML."""
+    s = _DROP.sub(" ", s or "")
+    s = _BLOCK.sub("\n\n", s)
+    s = html.unescape(_TAG.sub(" ", s))
+    paras = [_WS.sub(" ", p).strip() for p in re.split(r"\n\s*\n", s)]
+    return "\n\n".join(p for p in paras if p)
+
+
 def first_image(content: str, enclosures=None) -> str | None:
     for enc in enclosures or []:
         if (enc.get("mime_type") or "").startswith("image/"):
